@@ -56,6 +56,7 @@ from noema.conversations.service import (
     list_conversations,
     list_messages,
     retry_turn,
+    stream_execute_turn,
     update_conversation,
 )
 from noema.knowledge.service import (
@@ -179,6 +180,25 @@ def post_conversation_turn(
     if result.extraction_status == "queued":
         background_tasks.add_task(drain_background_jobs)
     return result
+
+
+@router.post("/conversations/{conversation_id}/turns/stream")
+def post_conversation_turn_stream(
+    conversation_id: str,
+    req: CreateTurnRequest,
+    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> StreamingResponse:
+    background_tasks.add_task(drain_background_jobs)
+    return StreamingResponse(
+        stream_execute_turn(
+            conversation_id=conversation_id,
+            req=req,
+            idempotency_key=idempotency_key,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/turns/{turn_id}", response_model=TurnStatusResponse)

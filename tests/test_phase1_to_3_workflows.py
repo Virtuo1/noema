@@ -413,3 +413,14 @@ def test_phase3_vector_and_graph_scale_benchmark(tmp_path: Path) -> None:
     assert graph_res.status_code == 200
     assert graph_ms < 250.0
 
+    # Verify live token streaming endpoint (POST /turns/stream)
+    stream_res = client.post(
+        f"/api/v1/conversations/{conv_id}/turns/stream",
+        json={"content": "Explain backpropagation and the chain rule"},
+    )
+    assert stream_res.status_code == 200
+    assert "event: turn.started" in stream_res.text
+    assert "event: assistant.delta" in stream_res.text
+    assert "event: turn.completed" in stream_res.text
+
+

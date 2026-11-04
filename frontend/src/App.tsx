@@ -38,6 +38,12 @@ export default function App(): React.ReactElement {
   const [lastFailedTurnId, setLastFailedTurnId] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [openTagMenuMsgId, setOpenTagMenuMsgId] = useState<string | null>(null);
+  const [optimisticUserText, setOptimisticUserText] = useState<string | null>(
+    null,
+  );
+  const [streamingAssistantText, setStreamingAssistantText] =
+    useState<string>("");
+  const [isStreaming, setIsStreaming] = useState<boolean>(false);
 
   // Queries
   const conversationsQuery = useQuery({
@@ -135,6 +141,14 @@ export default function App(): React.ReactElement {
   });
 
   const sendTurnMutation = useMutation({
+    onMutate: (content: string) => {
+      setMessageInput("");
+      setOptimisticUserText(content);
+      setStreamingAssistantText("");
+      setIsStreaming(true);
+      setLastFailedTurnId(null);
+      setStatusNotice(null);
+    },
     mutationFn: async (content: string) => {
       let targetConvId = activeConvId;
       if (!targetConvId) {
@@ -142,21 +156,30 @@ export default function App(): React.ReactElement {
         targetConvId = created.id;
         setSelectedConversationId(created.id);
       }
-      return apiClient.sendTurn(targetConvId, content, "personalized");
+      await apiClient.sendTurnStream(
+        targetConvId,
+        content,
+        {
+          onDelta: (delta) => {
+            setStreamingAssistantText((prev) => prev + delta);
+          },
+          onFailed: (turnId, message) => {
+            if (turnId) setLastFailedTurnId(turnId);
+            setStatusNotice(message);
+          },
+        },
+        "personalized",
+      );
     },
-    onSuccess: (res) => {
-      setMessageInput("");
-      if (res.status === "failed") {
-        setLastFailedTurnId(res.turn_id);
-        setStatusNotice(
-          res.error_message ||
-            "Assistant generation failed. Your message is safely saved and can be retried.",
-        );
-      } else {
-        setLastFailedTurnId(null);
-        setStatusNotice(null);
-      }
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["messages"] });
+      setOptimisticUserText(null);
+      setStreamingAssistantText("");
+      setIsStreaming(false);
       invalidateAll();
+      window.setTimeout(() => {
+        invalidateAll();
+      }, 2200);
     },
   });
 
@@ -478,7 +501,7 @@ export default function App(): React.ReactElement {
           >
             {/* Message Stream */}
             <div className="flex-1 py-8 space-y-6 overflow-y-auto">
-              {messages.length === 0 ? (
+              {messages.length === 0 && !isStreaming ? (
                 <div className="py-24 text-center space-y-4">
                   <h2 className="text-xl font-medium text-zinc-100">
                     What are you exploring today?
@@ -654,6 +677,34 @@ export default function App(): React.ReactElement {
                     </article>
                   );
                 })
+              )}
+
+              {/* Live Optimistic User Bubble + Real-Time Streaming Assistant Response */}
+              {isStreaming && (
+                <>
+                  {optimisticUserText &&
+                    messages[messages.length - 1]?.content !==
+                      optimisticUserText && (
+                      <article className="ml-auto max-w-xl bg-zinc-900/90 border border-zinc-800/80 rounded-2xl px-4 py-3">
+                        <div className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                          {optimisticUserText}
+                        </div>
+                      </article>
+                    )}
+                  <article className="max-w-2xl py-1">
+                    {streamingAssistantText ? (
+                      <div className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                        {streamingAssistantText}
+                        <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-zinc-400 animate-pulse" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                        <span>Thinking...</span>
+                      </div>
+                    )}
+                  </article>
+                </>
               )}
 
               {/* Failed Turn Retry Banner */}

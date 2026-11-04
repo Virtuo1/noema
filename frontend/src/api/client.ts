@@ -90,6 +90,91 @@ export const apiClient = {
     );
   },
 
+  sendTurnStream: async (
+    conversationId: string,
+    content: string,
+    callbacks: {
+      onDelta: (delta: string) => void;
+      onFailed?: (turnId: string, message: string) => void;
+    },
+    contextMode: "personalized" | "conversation_only" = "personalized",
+  ): Promise<void> => {
+    const idemKey = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const response = await fetch(
+      `${API_BASE}/conversations/${conversationId}/turns/stream`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idemKey,
+        },
+        body: JSON.stringify({ content, context_mode: contextMode }),
+      },
+    );
+
+    if (!response.body) {
+      // Fallback for test environments without ReadableStream body
+      const res = await apiClient.sendTurn(
+        conversationId,
+        content,
+        contextMode,
+      );
+      if (res.status === "failed") {
+        callbacks.onFailed?.(
+          res.turn_id,
+          res.error_message || "Generation failed.",
+        );
+      } else if (res.assistant_message?.content) {
+        callbacks.onDelta(res.assistant_message.content);
+      }
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+
+      for (const block of blocks) {
+        let eventName = "";
+        let dataLine = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            dataLine = line.slice(5).trim();
+          }
+        }
+        if (!dataLine) continue;
+        try {
+          const parsed = JSON.parse(dataLine) as Record<string, unknown>;
+          if (
+            eventName === "assistant.delta" &&
+            typeof parsed.delta === "string"
+          ) {
+            callbacks.onDelta(parsed.delta);
+          } else if (eventName === "turn.failed") {
+            callbacks.onFailed?.(
+              String(parsed.turn_id ?? ""),
+              String(
+                parsed.message ??
+                  "Assistant generation failed. Your message is safely saved.",
+              ),
+            );
+          }
+        } catch {
+          // Ignore malformed chunk
+        }
+      }
+    }
+  },
+
   getTurnStatus: async (turnId: string): Promise<TurnStatusResponse> =>
     requestJson<TurnStatusResponse>(`/turns/${turnId}`),
 
