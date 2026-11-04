@@ -33,6 +33,9 @@ This file is the durable project handoff for developers and coding agents. Keep 
       - Color-coded topic groups (`category`) clustered around topic hubs (`hierarchy_level` 1–3) with semantic zoom that simplifies to macro topics when zoomed out and reveals sub-topics when zoomed in, without cluttered edge labels.
       - Hover pop-out card over any node displaying its topic group, `#tags`, saved quote snippet, and source conversation.
       - Seamless transition between Graph view and Chat view, live `Related Chats` in the sidebar (`GET /api/v1/conversations/{id}/related`), and inline `#` tag autocomplete popup (`#aha`, `#confused`, `#question`, `#important`, `#hypothesis`, `#connection`, `#revisit`).
+      - Centered Topic Context Card with background darkening/blur: asking with an open topic card carries context into a brand new conversation without polluting previous chats.
+      - In-flight prompt cancellation via `AbortController` (Stop button and Esc key support).
+      - Rich Markdown & LaTeX Math renderer (`RichMarkdown.tsx`) styling headings, fenced code blocks with language badge and copy button, LaTeX display and inline math with Greek/operator symbols, tables, lists, and per-token fade-in streaming.
     - Measured latency benchmark (`test_phase3_vector_and_graph_scale_benchmark`) confirming exact vector ranking + FTS5 hybrid search and bounded graph projection complete well under 250 ms.
 - **In progress:** none.
 - **Next action:** Phase 4 (hosted multi-device sync or Tauri desktop packaging) is deferred by design until requested by the user.

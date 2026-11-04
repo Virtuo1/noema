@@ -1,0 +1,61 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { RichMarkdown, renderLatexMath } from "./RichMarkdown";
+
+describe("RichMarkdown Component", () => {
+  it("renders headings properly as semantic heading elements", () => {
+    const markdown = "# Heading 1\n## Heading 2\n### Heading 3";
+    render(<RichMarkdown content={markdown} />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Heading 1" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Heading 2" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Heading 3" }),
+    ).toBeDefined();
+  });
+
+  it("renders fenced code blocks with language badge and copy button", () => {
+    const markdown =
+      "```python\ndef backprop(gradient):\n    return gradient * 0.1\n```";
+    render(<RichMarkdown content={markdown} />);
+
+    expect(screen.getByText("python")).toBeDefined();
+    expect(screen.getByText("Copy")).toBeDefined();
+    expect(screen.getByText(/def backprop/)).toBeDefined();
+  });
+
+  it("renders display math and inline math with LaTeX Greek and operator symbols", () => {
+    const markdown =
+      "The loss function is $$\n\\mathcal{L} = \\frac{1}{2} (y - \\hat{y})^2\n$$\nwhere $ \\alpha \\in \\mathbb{R} $.";
+    const { container } = render(<RichMarkdown content={markdown} />);
+
+    expect(container.textContent).toContain("ℒ");
+    expect(container.textContent).toContain("α");
+    expect(container.textContent).toContain("∈");
+    expect(container.textContent).toContain("ℝ");
+  });
+
+  it("renders tables and lists correctly", () => {
+    const markdown =
+      "- Item A\n- Item B\n\n| Concept | Layer |\n|---|---|\n| Backprop | Neural |\n| Chain rule | Calculus |";
+    render(<RichMarkdown content={markdown} />);
+
+    expect(screen.getByText("Item A")).toBeDefined();
+    expect(screen.getByText("Item B")).toBeDefined();
+    expect(screen.getByText("Backprop")).toBeDefined();
+    expect(screen.getByText("Chain rule")).toBeDefined();
+  });
+
+  it("renderLatexMath handles fractions, sub/superscripts, and symbols", () => {
+    const node = renderLatexMath("\\sum_{i=1}^{N} x_i^2");
+    const { container } = render(<div>{node}</div>);
+
+    expect(container.textContent).toContain("∑");
+    expect(container.querySelector("sup")).toBeDefined();
+    expect(container.querySelector("sub")).toBeDefined();
+  });
+});

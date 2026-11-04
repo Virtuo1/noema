@@ -17,6 +17,7 @@ import {
 } from "./components/FloatingComposer";
 import { FloatingSidebar } from "./components/FloatingSidebar";
 import { GraphView } from "./components/GraphView";
+import { RichMarkdown } from "./components/RichMarkdown";
 import { SettingsAndOwnershipView } from "./components/SettingsAndOwnershipView";
 import { TimelineView } from "./components/TimelineView";
 
@@ -27,15 +28,12 @@ export const App: React.FC = () => {
     string | null
   >(null);
   const [composerText, setComposerText] = useState<string>("");
-  const [streamingChunks, setStreamingChunks] = useState<
-    { id: number; text: string; delayMs: number }[]
-  >([]);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [streamingUserText, setStreamingUserText] = useState<string | null>(
     null,
   );
-  const chunkCounterRef = useRef<number>(0);
-  const nextRevealTimeRef = useRef<number>(0);
   const [searchFilter, setSearchFilter] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Graph is the default UI mode filling the viewport
   const [activeSurface, setActiveSurface] = useState<"graph" | "chat">("graph");
@@ -51,10 +49,29 @@ export const App: React.FC = () => {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Universal Esc Back Button: Modal -> Topic Card -> Chat back to Graph
+  const handleCancelPrompt = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setStreamingUserText(null);
+    setStreamingContent(null);
+    if (activeConversationId) {
+      void queryClient.invalidateQueries({
+        queryKey: ["messages", activeConversationId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    }
+  }, [activeConversationId, queryClient]);
+
+  // Universal Esc Back Button: Cancel prompt -> Modal -> Topic Card -> Chat back to Graph
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (abortControllerRef.current) {
+        handleCancelPrompt();
+        return;
+      }
       if (settingsOpen) {
         setSettingsOpen(false);
         return;
@@ -73,7 +90,13 @@ export const App: React.FC = () => {
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [settingsOpen, timelineOpen, selectedConceptId, activeSurface]);
+  }, [
+    handleCancelPrompt,
+    settingsOpen,
+    timelineOpen,
+    selectedConceptId,
+    activeSurface,
+  ]);
 
   // Queries
   const conversationsQuery = useQuery({
@@ -172,61 +195,52 @@ export const App: React.FC = () => {
       focusConceptId: string | null;
     }) => {
       let convId = activeConversationId;
-      if (!convId) {
+      // When a topic card is open, asking carries the context into a *new* chat!
+      if (!convId || payload.focusConceptId) {
         const created = await apiClient.createConversation("");
         convId = created.id;
         setActiveConversationId(convId);
+        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
+
       setStreamingUserText(payload.content);
-      setStreamingChunks([]);
-      chunkCounterRef.current = 0;
-      nextRevealTimeRef.current = performance.now();
+      setStreamingContent("");
 
-      await apiClient.sendTurnStream(
-        convId,
-        payload.content,
-        {
-          onDelta: (delta) => {
-            const tokens = delta.match(/\S+\s*|\s+/g) ?? [delta];
-            const now = performance.now();
-            let scheduled = Math.max(now, nextRevealTimeRef.current);
-            // Cap max queue lead time so long bursts stay responsive while still fading word-by-word
-            if (scheduled - now > 900) {
-              scheduled = now + 900;
-            }
-            const newItems = tokens.map((tok) => {
-              const id = ++chunkCounterRef.current;
-              const delayMs = Math.max(0, Math.round(scheduled - now));
-              scheduled += 22;
-              return { id, text: tok, delayMs };
-            });
-            nextRevealTimeRef.current = scheduled;
-            setStreamingChunks((prev) => [...prev, ...newItems]);
-          },
-          onFailed: (turnId) => {
-            if (turnId) setLastFailedTurnId(turnId);
-          },
-        },
-        "personalized",
-        payload.focusConceptId,
-      );
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-      // Let the final staggered word fade-ins finish before swapping in the persisted message
-      const remainingMs = Math.max(
-        0,
-        Math.min(
-          1000,
-          Math.round(nextRevealTimeRef.current - performance.now() + 280),
-        ),
-      );
-      if (remainingMs > 20) {
-        await new Promise((resolve) => window.setTimeout(resolve, remainingMs));
+      try {
+        await apiClient.sendTurnStream(
+          convId,
+          payload.content,
+          {
+            onDelta: (delta) => {
+              setStreamingContent((prev) => (prev ?? "") + delta);
+            },
+            onFailed: (turnId) => {
+              if (turnId) setLastFailedTurnId(turnId);
+            },
+          },
+          "personalized",
+          payload.focusConceptId,
+          controller.signal,
+        );
+      } catch (err: unknown) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        throw err;
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
       }
+
       await queryClient.refetchQueries({ queryKey: ["messages", convId] });
     },
     onSettled: () => {
       setStreamingUserText(null);
-      setStreamingChunks([]);
+      setStreamingContent(null);
       setComposerText("");
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -251,7 +265,7 @@ export const App: React.FC = () => {
     ) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messagesQuery.data, streamingChunks, activeSurface]);
+  }, [messagesQuery.data, streamingContent, activeSurface]);
 
   const handleSelectConcept = useCallback((conceptId: string) => {
     setSelectedConceptId((prev) => (prev === conceptId ? null : conceptId));
@@ -416,7 +430,7 @@ export const App: React.FC = () => {
                   ) : (
                     /* Assistant outputs directly onto the pure black background */
                     <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      <RichMarkdown content={msg.content} />
 
                       {msg.annotations.length > 0 && (
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -463,18 +477,11 @@ export const App: React.FC = () => {
                 </article>
                 <article className="flex flex-col items-start animate-fade-in">
                   <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
-                    {streamingChunks.length > 0 ? (
-                      <p className="whitespace-pre-wrap">
-                        {streamingChunks.map((chunk) => (
-                          <span
-                            key={chunk.id}
-                            className="animate-token-fade"
-                            style={{ animationDelay: `${chunk.delayMs}ms` }}
-                          >
-                            {chunk.text}
-                          </span>
-                        ))}
-                      </p>
+                    {streamingContent ? (
+                      <RichMarkdown
+                        content={streamingContent}
+                        isStreaming={true}
+                      />
                     ) : (
                       <span className="text-xs text-zinc-500 animate-pulse">
                         Thinking...
@@ -542,6 +549,7 @@ export const App: React.FC = () => {
         value={composerText}
         onChange={setComposerText}
         onSubmit={handleSendQuestion}
+        onCancel={handleCancelPrompt}
         isSending={sendTurnMutation.isPending}
         activeSurface={activeSurface}
         sidebarOpen={sidebarOpen}

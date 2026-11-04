@@ -102,4 +102,9 @@ describe("Noema Full-Screen Graph & Seamless Chat Workspace", () => {
     expect(suggestedBadge.label).toContain("Suggested by AI (pending");
     expect(worldBadge.label).toContain("World claim (provisional");
   });
+
+  it("renders the application with query client and allows interaction", () => {
+    const { container } = renderWithQueryClient();
+    expect(container).toBeDefined();
+  });
 });

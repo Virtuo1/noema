@@ -76,6 +76,7 @@ interface FloatingComposerProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
   isSending: boolean;
   activeSurface: "graph" | "chat";
   sidebarOpen: boolean;
@@ -88,6 +89,7 @@ export const FloatingComposer: React.FC<FloatingComposerProps> = ({
   value,
   onChange,
   onSubmit,
+  onCancel,
   isSending,
   activeSurface,
   sidebarOpen,
@@ -240,16 +242,33 @@ export const FloatingComposer: React.FC<FloatingComposerProps> = ({
             }}
             onKeyDown={handleKeyDown}
             disabled={isSending}
-            placeholder={placeholder ?? defaultPlaceholder}
-            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-50"
+            placeholder={
+              isSending
+                ? "Generating response... (Esc to stop)"
+                : (placeholder ?? defaultPlaceholder)
+            }
+            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none disabled:opacity-60"
           />
-          <button
-            type="submit"
-            disabled={isSending || !value.trim()}
-            className="rounded-xl bg-white hover:bg-zinc-200 disabled:bg-white/[0.06] disabled:text-zinc-600 text-black font-medium px-4 py-2 text-xs transition-all duration-200 shrink-0"
-          >
-            {isSending ? "..." : "Ask"}
-          </button>
+          {isSending ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              title="Cancel prompt (Esc)"
+              aria-label="Cancel prompt generation"
+              className="rounded-xl bg-white/10 hover:bg-red-500/20 text-zinc-300 hover:text-red-200 border border-white/10 hover:border-red-500/30 font-medium px-3.5 py-2 text-xs transition-all duration-200 shrink-0 flex items-center gap-1.5"
+            >
+              <span className="w-2 h-2 rounded-[2px] bg-red-400 animate-pulse" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!value.trim()}
+              className="rounded-xl bg-white hover:bg-zinc-200 disabled:bg-white/[0.06] disabled:text-zinc-600 text-black font-medium px-4 py-2 text-xs transition-all duration-200 shrink-0"
+            >
+              Ask
+            </button>
+          )}
         </form>
       </div>
     </div>

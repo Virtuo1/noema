@@ -114,32 +114,48 @@ export const apiClient = {
     },
     contextMode: "personalized" | "conversation_only" = "personalized",
     focusConceptId?: string | null,
+    signal?: AbortSignal,
   ): Promise<void> => {
+    if (signal?.aborted) return;
     const idemKey = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const response = await fetch(
-      `${API_BASE}/conversations/${conversationId}/turns/stream`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idemKey,
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_BASE}/conversations/${conversationId}/turns/stream`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idemKey,
+          },
+          body: JSON.stringify({
+            content,
+            context_mode: contextMode,
+            focus_concept_id: focusConceptId ?? null,
+          }),
+          signal,
         },
-        body: JSON.stringify({
-          content,
-          context_mode: contextMode,
-          focus_concept_id: focusConceptId ?? null,
-        }),
-      },
-    );
+      );
+    } catch (err: unknown) {
+      if (
+        signal?.aborted ||
+        (err as { name?: string })?.name === "AbortError"
+      ) {
+        return;
+      }
+      throw err;
+    }
 
     if (!response.body) {
       // Fallback for test environments without ReadableStream body
+      if (signal?.aborted) return;
       const res = await apiClient.sendTurn(
         conversationId,
         content,
         contextMode,
         focusConceptId,
       );
+      if (signal?.aborted) return;
       if (res.status === "failed") {
         callbacks.onFailed?.(
           res.turn_id,
@@ -155,44 +171,62 @@ export const apiClient = {
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() ?? "";
-
-      for (const block of blocks) {
-        let eventName = "";
-        let dataLine = "";
-        for (const line of block.split("\n")) {
-          if (line.startsWith("event:")) {
-            eventName = line.slice(6).trim();
-          } else if (line.startsWith("data:")) {
-            dataLine = line.slice(5).trim();
+    try {
+      while (true) {
+        if (signal?.aborted) {
+          try {
+            await reader.cancel();
+          } catch {
+            // Ignore cancel error
           }
+          break;
         }
-        if (!dataLine) continue;
-        try {
-          const parsed = JSON.parse(dataLine) as Record<string, unknown>;
-          if (
-            eventName === "assistant.delta" &&
-            typeof parsed.delta === "string"
-          ) {
-            callbacks.onDelta(parsed.delta);
-          } else if (eventName === "turn.failed") {
-            callbacks.onFailed?.(
-              String(parsed.turn_id ?? ""),
-              String(
-                parsed.message ??
-                  "Assistant generation failed. Your message is safely saved.",
-              ),
-            );
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+
+        for (const block of blocks) {
+          let eventName = "";
+          let dataLine = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) {
+              eventName = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              dataLine = line.slice(5).trim();
+            }
           }
-        } catch {
-          // Ignore malformed chunk
+          if (!dataLine) continue;
+          try {
+            const parsed = JSON.parse(dataLine) as Record<string, unknown>;
+            if (
+              eventName === "assistant.delta" &&
+              typeof parsed.delta === "string"
+            ) {
+              callbacks.onDelta(parsed.delta);
+            } else if (eventName === "turn.failed") {
+              callbacks.onFailed?.(
+                String(parsed.turn_id ?? ""),
+                String(
+                  parsed.message ??
+                    "Assistant generation failed. Your message is safely saved.",
+                ),
+              );
+            }
+          } catch {
+            // Ignore malformed chunk
+          }
         }
       }
+    } catch (err: unknown) {
+      if (
+        signal?.aborted ||
+        (err as { name?: string })?.name === "AbortError"
+      ) {
+        return;
+      }
+      throw err;
     }
   },
 
