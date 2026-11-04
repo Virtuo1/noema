@@ -10,14 +10,14 @@ This file is the durable project handoff for developers and coding agents. Keep 
 - **In progress:** none.
 - **Next action when implementation is requested:** inspect the current repository and this file, then scaffold the Phase 0 project structure and make the smallest runnable application foundation consistent with the roadmap.
 - **Blockers:** none recorded.
-- **Last completed commit:** `ec2c616` (`docs v1.1`) is the current `main` baseline in the original project history. Later commits should be recorded here after they reach `main`.
+- **Foundation baseline:** the product and architecture documents originate in `ec2c616`; later milestone commits are listed below.
 
 ## Milestone log
 
 | Milestone | Status | Commit | Notes |
 |---|---|---|---|
 | Product and architecture foundation | Complete | `ec2c616` | See documents linked from [`README.md`](README.md). |
-| Autonomous agent and resumption guidance | Complete | See `main` history | Root `AGENTS.md` is Antigravity-discoverable; `implementation-status.md` is the persistent handoff. |
+| Autonomous agent and resumption guidance | Complete | `679e0c7` | Root `AGENTS.md` is Antigravity-discoverable; `implementation-status.md` is the persistent handoff. |
 | Phase 0: project scaffold and contracts | Not started | — | Choose tooling in checked-in project configuration; retain the local-first assumptions unless a concrete requirement changes them. |
 | Phase 1: core interactive prototype | Not started | — | Chat, typed/UI annotation, background extraction, evidence-linked graph, suggestion action, and prior-context retrieval. |
 | Phase 2: retrieval and provenance quality | Not started | — | Hybrid retrieval, source-grounded context, correction/merge, suggestion quality. |
