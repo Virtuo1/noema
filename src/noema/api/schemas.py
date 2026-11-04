@@ -151,6 +151,7 @@ class TurnAcceptedResponse(BaseModel):
     assistant_message_id: str | None = None
     stream_url: str
     extraction_status: str = "queued"
+    error_message: str | None = None
     applied_annotations: list[AnnotationDTO] = Field(default_factory=list)
     targeted_message_id: str | None = None
 

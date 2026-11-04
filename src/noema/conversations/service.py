@@ -512,6 +512,7 @@ def execute_turn(
                 assistant_message_id=None,
                 stream_url=f"/api/v1/turns/{turn_id}/stream",
                 extraction_status="not_queued",
+                error_message=exc.message,
                 applied_annotations=applied_inline,
                 targeted_message_id=user_msg_id if applied_inline else None,
             )
@@ -709,6 +710,7 @@ def retry_turn(
                 assistant_message_id=None,
                 stream_url=f"/api/v1/turns/{turn_id}/stream",
                 extraction_status="not_queued",
+                error_message=exc.message,
             )
 
     with session_scope(database_url) as session:

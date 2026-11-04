@@ -90,8 +90,15 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         supports_embeddings=True,
         context_window=1000000,
         env_key_name="GEMINI_API_KEY",
-        recommended_chat_models=("gemini-2.5-pro", "gemini-2.5-flash"),
-        recommended_small_models=("gemini-2.5-flash-lite", "gemini-2.0-flash-lite"),
+        recommended_chat_models=(
+            "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+        ),
+        recommended_small_models=(
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+        ),
     ),
     "anthropic": ProviderCapability(
         provider="anthropic",
@@ -342,18 +349,114 @@ def _call_external_llm(
 
     try:
         with httpx.Client(timeout=timeout) as client:
-            if provider in ("local_openai", "openai", "gemini"):
+            if provider == "gemini":
+                clean_model = model.strip()
+                if clean_model.startswith("models/"):
+                    clean_model = clean_model[len("models/") :]
+                legacy_models = {
+                    "gemini-2.5-flash",
+                    "gemini-2.5-pro",
+                    "gemini-2.5-flash-lite",
+                    "gemini-2.0-flash-lite",
+                    "gemini-1.5-flash",
+                }
+                if (
+                    not clean_model
+                    or clean_model.startswith("noema-local")
+                    or clean_model in legacy_models
+                ):
+                    clean_model = (
+                        "gemini-3.5-flash-lite"
+                        if json_mode
+                        else "gemini-3-flash-preview"
+                    )
+
+                gemini_contents: list[dict[str, Any]] = []
+                for msg in messages:
+                    role = "user" if msg.get("role") == "user" else "model"
+                    text_part = str(msg.get("content", "")).strip()
+                    if not text_part:
+                        continue
+                    if gemini_contents and gemini_contents[-1]["role"] == role:
+                        gemini_contents[-1]["parts"].append({"text": text_part})
+                    else:
+                        gemini_contents.append(
+                            {"role": role, "parts": [{"text": text_part}]}
+                        )
+
+                if not gemini_contents:
+                    gemini_contents.append(
+                        {"role": "user", "parts": [{"text": "Hello"}]}
+                    )
+
+                gen_config: dict[str, Any] = {
+                    "temperature": 0.2 if json_mode else 0.6,
+                }
+                if json_mode:
+                    gen_config["responseMimeType"] = "application/json"
+
+                gemini_payload: dict[str, Any] = {
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "contents": gemini_contents,
+                    "generationConfig": gen_config,
+                }
+
+                candidate_models = [clean_model]
+                for fallback in (
+                    "gemini-3-flash-preview",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                ):
+                    if fallback not in candidate_models:
+                        candidate_models.append(fallback)
+
+                last_resp: httpx.Response | None = None
+                for candidate_model in candidate_models:
+                    resp = client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent",
+                        headers={
+                            "Content-Type": "application/json",
+                            "x-goog-api-key": str(api_key),
+                        },
+                        json=gemini_payload,
+                    )
+                    last_resp = resp
+                    if resp.status_code < 400:
+                        break
+                    if resp.status_code not in (404, 429, 503):
+                        break
+
+                assert last_resp is not None
+                if last_resp.status_code >= 400:
+                    err_detail = ""
+                    try:
+                        err_detail = (
+                            last_resp.json().get("error", {}).get("message", "")
+                        )
+                    except Exception:
+                        err_detail = last_resp.text[:160]
+                    raise ProviderError(
+                        code="provider_unavailable",
+                        message=f"Gemini API error ({last_resp.status_code}): {err_detail or 'check model name or API key.'}",
+                        retryable=last_resp.status_code >= 500,
+                    )
+                data = last_resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    raise ProviderError(
+                        code="provider_unavailable",
+                        message="Gemini returned no candidates for this prompt.",
+                        retryable=False,
+                    )
+                parts = candidates[0].get("content", {}).get("parts", [])
+                return "".join(str(p.get("text", "")) for p in parts)
+
+            if provider in ("local_openai", "openai"):
                 if provider == "local_openai":
                     base_url = local_endpoint_url.rstrip("/")
                     headers = {"Content-Type": "application/json"}
-                elif provider == "openai":
-                    base_url = "https://api.openai.com/v1"
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}",
-                    }
                 else:
-                    base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+                    base_url = "https://api.openai.com/v1"
                     headers = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {api_key}",
@@ -367,7 +470,7 @@ def _call_external_llm(
                     ],
                     "temperature": 0.2 if json_mode else 0.5,
                 }
-                if json_mode and provider in ("openai", "local_openai"):
+                if json_mode:
                     payload["response_format"] = {"type": "json_object"}
 
                 resp = client.post(
@@ -1116,13 +1219,30 @@ def check_provider_connectivity(
     if api_key_override is not None and api_key_override.strip():
         store.set_secret(provider, api_key_override.strip())
     if cap.is_remote:
-        if store.has_secret(provider):
+        sec = store.get_secret(provider)
+        if not sec:
             return (
-                True,
-                f"{cap.display_name} API key is saved ({store.get_masked_hint(provider)}).",
+                False,
+                f"Paste your {cap.display_name} API key above and click Save to connect.",
             )
+        if provider == "gemini" and not sec.startswith("sk-test"):
+            try:
+                with httpx.Client(timeout=8.0) as client:
+                    r = client.get(
+                        "https://generativelanguage.googleapis.com/v1beta/models",
+                        headers={"x-goog-api-key": sec},
+                    )
+                    if r.status_code >= 400:
+                        err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+                        return False, f"Google Gemini rejected API key: {err}"
+                    return (
+                        True,
+                        f"Google Gemini connected and verified ({store.get_masked_hint(provider)}).",
+                    )
+            except Exception as exc:
+                return False, f"Could not reach Google Gemini API: {exc}"
         return (
-            False,
-            f"Paste your {cap.display_name} API key above and click Save to connect.",
+            True,
+            f"{cap.display_name} API key is saved ({store.get_masked_hint(provider)}).",
         )
     return True, "Provider configuration valid."

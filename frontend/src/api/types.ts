@@ -90,6 +90,7 @@ export interface TurnAcceptedResponse {
   assistant_message_id: string | null;
   stream_url: string;
   extraction_status: string;
+  error_message?: string | null;
   applied_annotations: AnnotationDTO[];
   targeted_message_id: string | null;
 }

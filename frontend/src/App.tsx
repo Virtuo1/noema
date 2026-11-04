@@ -149,7 +149,8 @@ export default function App(): React.ReactElement {
       if (res.status === "failed") {
         setLastFailedTurnId(res.turn_id);
         setStatusNotice(
-          "Assistant generation failed. Your message is safely saved and can be retried.",
+          res.error_message ||
+            "Assistant generation failed. Your message is safely saved and can be retried.",
         );
       } else {
         setLastFailedTurnId(null);
