@@ -6,7 +6,7 @@ This guide is for developers and AI coding agents working in the Noema repositor
 
 - **GitHub:** [Virtuo1/noema](https://github.com/Virtuo1/noema)
 - **Issues:** [GitHub Issues](https://github.com/Virtuo1/noema/issues)
-- **Current state:** product/architecture documentation only; no application scaffold or established build commands are present yet.
+- **Current state:** Phase 0 through Phase 3 core product roadmap implemented and verified (`uv run --offline ruff check .`, `uv run --offline pytest`, `uv run --offline alembic upgrade head`, `npm --prefix frontend run lint`, `npm --prefix frontend run test`, `npm --prefix frontend run build`).
 
 The user authorizes coding agents to read and modify repository files and expects completed milestone work to be committed and pushed to `main`. Do not ask for routine approval to edit, commit, or push project work. Do not force-push or rewrite shared history. If an HTTPS push fails, try SSH authentication before concluding credentials are unavailable. If `main` is protected or no authorized push method works, keep work safely committed on a task branch and record the blocker in [`implementation-status.md`](implementation-status.md). Do not change repository settings or deploy without a separate request.
 

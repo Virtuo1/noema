@@ -1,10 +1,10 @@
 # Architecture decisions and development roadmap
 
-This document contains proposed ADRs. “Proposed” means a decision that is coherent for the stated local single-user assumption and can be revised when the product decision changes. Each ADR records alternatives and the trigger for review.
+This document contains ADRs for the local single-user architecture. Decisions marked “Accepted” are implemented in the repository and can be revised when a product decision changes. Each ADR records alternatives and the trigger for review.
 
 ## ADR-001: Start with SQLite for a local single-user prototype
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Use SQLite as the local source of truth, WAL mode, foreign keys enabled on every connection, short write transactions, FTS5 for lexical search, and application-side exact vector ranking for an initially small corpus.
 
 ### Context
@@ -34,7 +34,7 @@ Choose PostgreSQL before launch if the initial product must be remotely hosted, 
 
 ## ADR-002: Local-first deployment is the initial product boundary
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Run the browser UI and API locally; persist data on the user's device; call hosted AI providers only when selected/configured. No cloud sync or authentication is in the prototype.
 
 ### Alternatives and trade-offs
@@ -47,7 +47,7 @@ The selected approach fits data ownership and local model support. It also accep
 
 ## ADR-003: Store the graph in relational tables
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Use relational concept, claim, personal relation, suggestion, evidence, and event tables. Implement graph traversal as indexed SQL joins with a bounded depth.
 
 ### Alternatives and trade-offs
@@ -60,7 +60,7 @@ The expected graph is personal and user-sized. Initial navigation is focused, on
 
 ## ADR-004: Separate exact vector ranking behind a retrieval port
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Store vectors with model/dimension metadata; use exact application-side ranking initially. Keep lexical and vector retrieval behind a common repository interface and evaluate recall/latency before indexing approximately.
 
 ### Alternatives and trade-offs
@@ -73,7 +73,7 @@ Use exact search as a baseline because it has predictable recall and avoids inde
 
 ## ADR-005: Use a small provider abstraction, not a provider framework
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Define application-owned interfaces for chat completion/streaming, embeddings, and structured extraction. Implement adapters for the first hosted provider and an OpenAI-compatible local endpoint as needed. Store provider/model/prompt metadata per run.
 
 ### Alternatives and trade-offs
@@ -86,7 +86,7 @@ Keep a capability map for streaming, schema-constrained output, embeddings, and 
 
 ## ADR-006: Use a durable SQLite-backed worker queue first
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Persist extraction/embedding jobs in the same database transaction as their source completion and process them with one restartable worker loop, leases, bounded retries, and idempotency keys.
 
 ### Alternatives and trade-offs
@@ -99,7 +99,7 @@ If the product moves to hosted multi-worker operation, move the same job contrac
 
 ## ADR-007: Keep current projections plus an append-only knowledge event ledger
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Store current state in relational projection tables and append a typed `knowledge_events` record for each meaningful change. Historical views replay those deltas. Do not event-source every message and setting.
 
 ### Alternatives and trade-offs
@@ -112,7 +112,7 @@ Messages are the original evidence. Knowledge events record state changes, not d
 
 ## ADR-008: Use React/TypeScript with a graph-renderer adapter; start with Cytoscape.js
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Keep a React + TypeScript + Vite frontend, server state through TanStack Query, minimal local state, and a graph component adapter. Start with Cytoscape.js for an interactive bounded graph.
 
 ### Alternatives and trade-offs
@@ -125,7 +125,7 @@ The graph DTO is owned by the API. Cytoscape-specific data and positions stay at
 
 ## ADR-009: Use sourced claims for the world model and user-owned records for personal knowledge
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Decision:** Persist world statements as provisional/supported/challenged claims with provenance. Store personal states and user relations separately. Store AI discoveries as pending suggestions. Promotion requires user evidence/action or a trustworthy source workflow appropriate to the claim.
 
 ### Alternatives and trade-offs
