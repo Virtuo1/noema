@@ -4,6 +4,7 @@ import React, {
   Children,
   isValidElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,7 +16,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { Element, Root, Text } from "hast";
 import { visit } from "unist-util-visit";
-import type { Plugin } from "unified";
+import type { Plugin, PluggableList } from "unified";
 import { getTagBadgeClasses } from "./FloatingComposer";
 
 import "katex/dist/katex.min.css";
@@ -62,10 +63,57 @@ const rehypeColorTags: Plugin<[], Root> = () => (tree) => {
   });
 };
 
+const rehypeStreamFade: Plugin<[], Root> = () => (tree) => {
+  visit(tree, "text", (node, index, parent) => {
+    if (index === undefined || !parent || !("children" in parent)) return;
+    if (parent.type === "element") {
+      const tag = parent.tagName.toLowerCase();
+      if (["code", "pre", "a", "script", "style"].includes(tag)) {
+        return;
+      }
+      const classes = Array.isArray(parent.properties?.className)
+        ? parent.properties.className.map(String)
+        : [];
+      if (classes.includes("animate-token-fade") || classes.includes("katex")) {
+        return;
+      }
+    }
+
+    const val = node.value;
+    if (!val || !val.trim()) return;
+
+    // Split text into tokens (words/punctuation and whitespace)
+    const tokens = val.match(/\S+\s*|\s+/g);
+    if (!tokens || tokens.length === 0) return;
+
+    const replacement: (Element | Text)[] = tokens.map((token) => {
+      if (!token.trim()) {
+        return { type: "text", value: token };
+      }
+      return {
+        type: "element",
+        tagName: "span",
+        properties: {
+          className: ["animate-token-fade"],
+        },
+        children: [{ type: "text", value: token }],
+      };
+    });
+
+    parent.children.splice(index, 1, ...replacement);
+    return index + replacement.length;
+  });
+};
+
 const rehypeMath: [typeof rehypeKatex, { throwOnError: boolean }] = [
   rehypeKatex,
   { throwOnError: false },
 ];
+
+const rehypeHighlightConfig: [
+  typeof rehypeHighlight,
+  { detect: boolean; ignoreMissing: boolean },
+] = [rehypeHighlight, { detect: false, ignoreMissing: true }];
 
 function getPlainText(node: React.ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -90,7 +138,7 @@ const CodeBlock: React.FC<{
   };
 
   return (
-    <div className="my-3.5 overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950/95 shadow-lg">
+    <div className="my-3.5 overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950/95 shadow-lg animate-fade-in">
       <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.03] px-4 py-2 text-[11px] text-zinc-400">
         <span className="font-mono lowercase text-zinc-300">
           {language || "code"}
@@ -113,7 +161,7 @@ const CodeBlock: React.FC<{
 const markdownComponents: Components = {
   h1: ({ children, ...props }) => (
     <h1
-      className="mb-2 mt-5 text-xl font-semibold tracking-tight text-white"
+      className="mb-2 mt-5 text-xl font-semibold tracking-tight text-white animate-fade-in"
       {...props}
     >
       {children}
@@ -121,7 +169,7 @@ const markdownComponents: Components = {
   ),
   h2: ({ children, ...props }) => (
     <h2
-      className="mb-2 mt-4 text-lg font-semibold tracking-tight text-white"
+      className="mb-2 mt-4 text-lg font-semibold tracking-tight text-white animate-fade-in"
       {...props}
     >
       {children}
@@ -129,14 +177,17 @@ const markdownComponents: Components = {
   ),
   h3: ({ children, ...props }) => (
     <h3
-      className="mb-1.5 mt-3.5 text-base font-semibold text-zinc-100"
+      className="mb-1.5 mt-3.5 text-base font-semibold text-zinc-100 animate-fade-in"
       {...props}
     >
       {children}
     </h3>
   ),
   h4: ({ children, ...props }) => (
-    <h4 className="mb-1 mt-3 text-sm font-semibold text-zinc-200" {...props}>
+    <h4
+      className="mb-1 mt-3 text-sm font-semibold text-zinc-200 animate-fade-in"
+      {...props}
+    >
       {children}
     </h4>
   ),
@@ -157,19 +208,25 @@ const markdownComponents: Components = {
   ),
   blockquote: ({ children, ...props }) => (
     <blockquote
-      className="my-3 border-l-2 border-white/20 pl-4 text-zinc-300"
+      className="my-3 border-l-2 border-white/20 pl-4 text-zinc-300 animate-fade-in"
       {...props}
     >
       {children}
     </blockquote>
   ),
   ul: ({ children, ...props }) => (
-    <ul className="my-2.5 list-disc space-y-1 pl-6 text-zinc-200" {...props}>
+    <ul
+      className="my-2.5 list-disc space-y-1 pl-6 text-zinc-200 animate-fade-in"
+      {...props}
+    >
       {children}
     </ul>
   ),
   ol: ({ children, ...props }) => (
-    <ol className="my-2.5 list-decimal space-y-1 pl-6 text-zinc-200" {...props}>
+    <ol
+      className="my-2.5 list-decimal space-y-1 pl-6 text-zinc-200 animate-fade-in"
+      {...props}
+    >
       {children}
     </ol>
   ),
@@ -180,7 +237,7 @@ const markdownComponents: Components = {
   ),
   hr: () => <hr className="my-4 border-t border-white/[0.08]" />,
   table: ({ children, ...props }) => (
-    <div className="my-3 overflow-x-auto rounded-xl border border-white/[0.08]">
+    <div className="my-3 overflow-x-auto rounded-xl border border-white/[0.08] animate-fade-in">
       <table className="w-full border-collapse text-left text-sm" {...props}>
         {children}
       </table>
@@ -225,7 +282,7 @@ const markdownComponents: Components = {
       )
     ) {
       return (
-        <pre className="my-3 overflow-x-auto rounded-xl bg-zinc-950 p-4">
+        <pre className="my-3 overflow-x-auto rounded-xl bg-zinc-950 p-4 animate-fade-in">
           {children}
         </pre>
       );
@@ -252,41 +309,53 @@ export const RichMarkdown: React.FC<RichMarkdownProps> = ({
 }) => {
   const [renderedContent, setRenderedContent] = useState(content);
   const pendingContentRef = useRef(content);
-  const renderTimerRef = useRef<number | null>(null);
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     pendingContentRef.current = content;
     if (!isStreaming) {
-      if (renderTimerRef.current !== null) {
-        window.clearTimeout(renderTimerRef.current);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
       }
-      renderTimerRef.current = null;
       setRenderedContent(content);
       return;
     }
-    if (renderTimerRef.current === null) {
-      renderTimerRef.current = window.setTimeout(() => {
-        renderTimerRef.current = null;
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
         setRenderedContent(pendingContentRef.current);
-      }, 32);
+      });
     }
   }, [content, isStreaming]);
 
   useEffect(
     () => () => {
-      if (renderTimerRef.current !== null) {
-        window.clearTimeout(renderTimerRef.current);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
       }
     },
     [],
   );
+
+  const rehypePlugins = useMemo(() => {
+    const plugins: PluggableList = [
+      rehypeColorTags,
+      rehypeMath,
+      rehypeHighlightConfig,
+    ];
+    if (isStreaming) {
+      plugins.push(rehypeStreamFade);
+    }
+    return plugins;
+  }, [isStreaming]);
 
   return (
     <div className="noema-markdown min-w-0 break-words">
       <ReactMarkdown
         skipHtml
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeColorTags, rehypeMath, rehypeHighlight]}
+        rehypePlugins={rehypePlugins}
         components={markdownComponents}
       >
         {renderedContent}

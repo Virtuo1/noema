@@ -61,17 +61,23 @@ This file is the durable project handoff for developers and coding agents. Keep 
 - Alembic upgrade through `0002_saved_note_summary` on a fresh temporary SQLite database — passed.
 - Automated test suites were not run for this milestone.
 
-### Existing database migration recovery and graph empty state centering
+### Streaming Markdown animation and lag elimination
 
-- The existing `data/noema.db` was upgraded from `0001_initial_schema` to `0002_saved_note_summary`; this resolves the missing `evidence.summary` column error.
-- Application startup now runs Alembic migrations through `head`, including for existing databases, and restores FTS trigger/local owner bootstrap via `ensure_fts_and_local_owner`.
-- The "Your knowledge graph is ready" empty state overlay in `GraphView` is now centered identically to the floating question box and top mode toggle, adjusting smoothly when the sidebar expands or collapses.
+- Fixed lag during streaming Markdown generation by:
+  - Throttling SSE stream delta updates in `App.tsx` via `requestAnimationFrame`, avoiding dozens of redundant React state renders per second.
+  - Throttling DOM scrolling during streaming to `requestAnimationFrame` with instantaneous auto-follow (`behavior: "auto"`), eliminating layout thrashing caused by repeatedly canceled smooth-scroll animations.
+  - Direct static import of `RichMarkdown` instead of `React.lazy` to eliminate empty Suspense flash and render lag.
+  - Configured `rehypeHighlight` with `{ detect: false, ignoreMissing: true }` so regex language autodetectors do not run trial parses on partial streaming text blocks.
+- Implemented word-by-word mist/blur fade-in for streamed Markdown via `rehypeStreamFade`:
+  - Tokenizes streamed text nodes into `<span className="animate-token-fade">` elements using `@keyframes noemaTokenFade` (`opacity: 0, filter: blur(4px), translateY(2px)` to `opacity: 1, filter: blur(0px), translateY(0)`).
+  - Existing words preserve DOM identity across stream chunks, so only newly appended words animate without flickering or re-animating earlier text.
+  - Added gentle `animate-fade-in` to headings, code blocks, tables, lists, and blockquotes as they mount.
 - Verified test suites:
   - `npm --prefix frontend run lint` — passed.
-  - `npm --prefix frontend run test` — passed (8 tests in 2 suites).
-  - `npm --prefix frontend run build` — passed (`tsc -b && vite build`).
+  - `npm --prefix frontend test` — passed (9 tests across 2 suites).
+  - `npm --prefix frontend run build` — passed.
   - `uv run ruff check .` — passed.
-  - `uv run pytest` — passed (8 passed in 9.72s).
+  - `uv run pytest` — passed (8 passed in 21.84s).
 
 ## Milestone log
 

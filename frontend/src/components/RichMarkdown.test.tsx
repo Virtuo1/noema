@@ -58,4 +58,16 @@ describe("RichMarkdown Component", () => {
     expect(container.querySelector("sup")).toBeDefined();
     expect(container.querySelector("sub")).toBeDefined();
   });
+
+  it("applies animate-token-fade spans to words when isStreaming is true", () => {
+    const markdown = "Backpropagation computes gradients #aha";
+    const { container } = render(
+      <RichMarkdown content={markdown} isStreaming={true} />,
+    );
+
+    const tokenSpans = container.querySelectorAll(".animate-token-fade");
+    expect(tokenSpans.length).toBeGreaterThan(0);
+    expect(container.textContent).toContain("Backpropagation");
+    expect(container.textContent).toContain("#aha");
+  });
 });

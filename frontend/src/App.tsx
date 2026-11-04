@@ -7,8 +7,6 @@
  */
 
 import React, {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -24,14 +22,9 @@ import {
 } from "./components/FloatingComposer";
 import { FloatingSidebar } from "./components/FloatingSidebar";
 import { GraphView } from "./components/GraphView";
+import { RichMarkdown } from "./components/RichMarkdown";
 import { SettingsAndOwnershipView } from "./components/SettingsAndOwnershipView";
 import { TimelineView } from "./components/TimelineView";
-
-const RichMarkdown = lazy(() =>
-  import("./components/RichMarkdown").then((module) => ({
-    default: module.RichMarkdown,
-  })),
-);
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -44,6 +37,9 @@ export const App: React.FC = () => {
   const [streamingUserText, setStreamingUserText] = useState<string | null>(
     null,
   );
+  const streamingTextRef = useRef<string>("");
+  const streamRafRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const [searchFilter, setSearchFilter] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -68,6 +64,11 @@ export const App: React.FC = () => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (streamRafRef.current !== null) {
+      cancelAnimationFrame(streamRafRef.current);
+      streamRafRef.current = null;
+    }
+    streamingTextRef.current = "";
     setStreamingUserText(null);
     setStreamingContent(null);
     if (activeConversationId) {
@@ -223,6 +224,7 @@ export const App: React.FC = () => {
       }
 
       setStreamingUserText(payload.content);
+      streamingTextRef.current = "";
       setStreamingContent("");
 
       const controller = new AbortController();
@@ -234,7 +236,13 @@ export const App: React.FC = () => {
           payload.content,
           {
             onDelta: (delta) => {
-              setStreamingContent((prev) => (prev ?? "") + delta);
+              streamingTextRef.current += delta;
+              if (streamRafRef.current === null) {
+                streamRafRef.current = requestAnimationFrame(() => {
+                  streamRafRef.current = null;
+                  setStreamingContent(streamingTextRef.current);
+                });
+              }
             },
             onFailed: (turnId) => {
               if (turnId) setLastFailedTurnId(turnId);
@@ -253,11 +261,20 @@ export const App: React.FC = () => {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
         }
+        if (streamRafRef.current !== null) {
+          cancelAnimationFrame(streamRafRef.current);
+          streamRafRef.current = null;
+        }
       }
 
       await queryClient.refetchQueries({ queryKey: ["messages", convId] });
     },
     onSettled: () => {
+      if (streamRafRef.current !== null) {
+        cancelAnimationFrame(streamRafRef.current);
+        streamRafRef.current = null;
+      }
+      streamingTextRef.current = "";
       setStreamingUserText(null);
       setStreamingContent(null);
       setComposerText("");
@@ -280,11 +297,23 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (
-      activeSurface === "chat" &&
-      typeof messagesEndRef.current?.scrollIntoView === "function"
+      activeSurface !== "chat" ||
+      typeof messagesEndRef.current?.scrollIntoView !== "function"
     ) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      return;
     }
+
+    if (streamingContent !== null) {
+      if (scrollRafRef.current === null) {
+        scrollRafRef.current = requestAnimationFrame(() => {
+          scrollRafRef.current = null;
+          messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        });
+      }
+      return;
+    }
+
+    messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messagesQuery.data, streamingContent, activeSurface]);
 
   const handleSelectConcept = useCallback((conceptId: string) => {
@@ -456,9 +485,7 @@ export const App: React.FC = () => {
                   ) : (
                     /* Assistant outputs directly onto the pure black background */
                     <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
-                      <Suspense fallback={null}>
-                        <RichMarkdown content={msg.content} />
-                      </Suspense>
+                      <RichMarkdown content={msg.content} />
 
                       {msg.annotations.length > 0 && (
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -506,12 +533,10 @@ export const App: React.FC = () => {
                 <article className="flex flex-col items-start animate-fade-in">
                   <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
                     {streamingContent ? (
-                      <Suspense fallback={null}>
-                        <RichMarkdown
-                          content={streamingContent}
-                          isStreaming={true}
-                        />
-                      </Suspense>
+                      <RichMarkdown
+                        content={streamingContent}
+                        isStreaming={true}
+                      />
                     ) : (
                       <span className="text-xs text-zinc-500 animate-pulse">
                         Thinking...
