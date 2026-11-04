@@ -23,8 +23,8 @@ function renderWithQueryClient() {
   );
 }
 
-describe("Noema Frontend Epistemic & Interaction Guarantees", () => {
-  it("renders the chat-first workspace by default with direct #command support and navigation", () => {
+describe("Noema Full-Screen Graph & Seamless Chat Workspace", () => {
+  it("renders the full-screen graph by default, shows #tag autocomplete when typing #, and transitions seamlessly to chat", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       status: 200,
@@ -33,24 +33,43 @@ describe("Noema Frontend Epistemic & Interaction Guarantees", () => {
         nodes: [],
         edges: [],
         counts: { nodes: 0, edges: 0, omitted_nodes: 0, omitted_edges: 0 },
-        providers: [],
-        remote_transfer_active: false,
+        provider: "google_gemini",
+        has_api_key: true,
+        api_key_Preview: "AIza...1234",
+        base_url: "",
+        chat_model: "gemini-3-flash-preview",
+        organizer_model: "gemini-3.5-flash-lite",
+        background_organization: true,
       }),
     } as Response);
 
     renderWithQueryClient();
 
     expect(screen.getByText("Noema")).toBeDefined();
-    expect(screen.getByText("Chat Workspace (Primary)")).toBeDefined();
-    expect(screen.getByLabelText("Message or #command input")).toBeDefined();
+    expect(screen.getByLabelText("Knowledge graph surface")).toBeDefined();
 
-    // Navigate to Timeline and return to Chat
-    fireEvent.click(screen.getByText(/Timeline/));
+    const input = screen.getByLabelText(
+      "Message or #command input",
+    ) as HTMLInputElement;
+    expect(input).toBeDefined();
+
+    // Typing # triggers the floating tag suggestion popup
+    fireEvent.change(input, { target: { value: "Backpropagation #ah" } });
     expect(
-      screen.getByText("Knowledge Timeline & Revision Ledger"),
+      screen.getByRole("listbox", { name: "Tag suggestions" }),
     ).toBeDefined();
-    fireEvent.click(screen.getByText("← Return to Conversation"));
-    expect(screen.getByLabelText("Message or #command input")).toBeDefined();
+    expect(screen.getByText("#aha")).toBeDefined();
+
+    // Clicking a tag suggestion completes it inline
+    fireEvent.click(screen.getByText("#aha"));
+    expect(input.value).toBe("Backpropagation #aha ");
+
+    // Seamlessly switch to Chat view and back to Graph view
+    fireEvent.click(screen.getByText("💬 Chat"));
+    expect(screen.getByLabelText("Chat surface")).toBeDefined();
+
+    fireEvent.click(screen.getByText(/◉ Graph/));
+    expect(screen.getByLabelText("Knowledge graph surface")).toBeDefined();
   });
 
   it("formats personal signals honestly without claiming objective mastery and distinguishes edge layers", () => {

@@ -1261,10 +1261,11 @@ def _extract_with_small_llm(
         "You are Noema's small background knowledge organizer model. "
         "Read the completed conversation turn and output ONLY valid JSON matching this structure:\n"
         "{\n"
-        '  "concepts": [{"canonical_name": "string", "surface_text": "exact substring in message", "description": "1 sentence"}],\n'
+        '  "concepts": [{"canonical_name": "string", "surface_text": "exact substring in message", "category": "Broad parent topic (e.g. Machine Learning, Mathematics, Neuroscience, Food, Physics, Philosophy)", "description": "1 concise sentence"}],\n'
         '  "world_claims": [{"subject_name": "string", "predicate": "uses|uses_mechanism|depends_on|is_a|part_of|causes|contrasts_with|analogous_to|related_to", "object_name": "string", "claim_text": "string"}],\n'
         '  "suggestions": [{"subject_name": "string", "predicate": "contrasts_with|contrasts_with_learning|analogous_to|depends_on|related_to", "object_name": "string", "explanation": "why connecting these concepts is insightful"}]\n'
         "}\n"
+        "Always group related concepts under a consistent broad 'category' and link sub-concepts to their broader concepts using 'is_a' or 'part_of' in world_claims.\n"
         f"Known concepts in user's graph: {json.dumps(known_names)}"
     )
     turn_prompt = (
@@ -1289,7 +1290,9 @@ def _extract_with_small_llm(
     for item in parsed.get("concepts", []):
         cname = str(item.get("canonical_name", "")).strip()
         surf = str(item.get("surface_text", cname)).strip()
-        desc = str(item.get("description", "")).strip()
+        cat = str(item.get("category", "")).strip()
+        raw_desc = str(item.get("description", "")).strip()
+        desc = f"[{cat}] {raw_desc}".strip() if cat and not raw_desc.startswith("[") else raw_desc
         if not cname or not surf:
             continue
         for mid, mtext in ((user_id, user_text), (asst_id, asst_text)):

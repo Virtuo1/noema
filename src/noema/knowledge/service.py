@@ -68,6 +68,7 @@ from noema.persistence.models import (
     ConceptAliasModel,
     ConceptMentionModel,
     ConceptModel,
+    ConversationModel,
     EvidenceModel,
     ExtractionRunModel,
     HypothesisEvidenceModel,
@@ -2746,14 +2747,64 @@ def project_knowledge_graph(
     total_candidate_edges = len(filtered_edges)
     kept_edges = filtered_edges[:edge_limit]
 
+    # Compute node degrees and hierarchy targets
+    degree_by_id: dict[str, int] = {cid: 0 for cid in kept_concept_ids}
+    hierarchy_targets: set[str] = set()
+    hierarchy_sources: set[str] = set()
+    neighbors_by_id: dict[str, list[str]] = {cid: [] for cid in kept_concept_ids}
+
+    for edge in kept_edges:
+        degree_by_id[edge.source] = degree_by_id.get(edge.source, 0) + 1
+        degree_by_id[edge.target] = degree_by_id.get(edge.target, 0) + 1
+        neighbors_by_id.setdefault(edge.source, []).append(edge.target)
+        neighbors_by_id.setdefault(edge.target, []).append(edge.source)
+        if edge.is_hierarchy or edge.predicate in ("is_a", "part_of", "depends_on"):
+            hierarchy_targets.add(edge.target)
+            hierarchy_sources.add(edge.source)
+
+    def _infer_category(cname: str, desc: str) -> str:
+        if desc.startswith("[") and "]" in desc:
+            cat = desc[1 : desc.index("]")].strip()
+            if cat:
+                return cat
+        combined = f"{cname} {desc}".lower()
+        topic_rules = [
+            ("Neural Networks & AI", ("neural", "backprop", "transformer", "attention", "layer", "deep learning", "network", "llm", "model")),
+            ("Mathematics & Calculus", ("chain rule", "calculus", "derivative", "jacobian", "matrix", "linear", "gradient", "theorem", "equation")),
+            ("Optimization & Stats", ("descent", "loss", "regularization", "bayesian", "prior", "gaussian", "overfitting", "variance", "probability")),
+            ("Neuroscience & Biology", ("hebbian", "synap", "neuron", "biological", "plasticity", "brain", "cortex")),
+            ("Food & Nutrition", ("apple", "pie", "food", "fruit", "recipe", "cooking", "bake", "nutrition", "ingredient")),
+            ("Computer Science", ("algorithm", "database", "graph", "system", "code", "architecture", "memory", "compiler")),
+            ("Physics & Systems", ("quantum", "energy", "entropy", "thermodynamics", "force", "wave", "mechanics")),
+        ]
+        for label, keywords in topic_rules:
+            if any(k in combined for k in keywords):
+                return label
+        return "Core Concepts"
+
+    raw_categories: dict[str, str] = {}
+    for cid in kept_concept_ids:
+        c = all_concepts[cid]
+        raw_categories[cid] = _infer_category(c.canonical_name, c.description or "")
+
+    # Propagate categories across connected neighbors if a node defaulted to "Core Concepts"
+    for cid in kept_concept_ids:
+        if raw_categories[cid] == "Core Concepts":
+            for nb in neighbors_by_id.get(cid, []):
+                if raw_categories.get(nb) and raw_categories[nb] != "Core Concepts":
+                    raw_categories[cid] = raw_categories[nb]
+                    break
+
     nodes: list[GraphNodeDTO] = []
     for cid in kept_concept_ids:
         c = all_concepts[cid]
         mentions = session.scalars(
-            select(ConceptMentionModel).where(
+            select(ConceptMentionModel)
+            .where(
                 ConceptMentionModel.concept_id == c.id,
                 ConceptMentionModel.created_at <= effective_time,
             )
+            .order_by(ConceptMentionModel.created_at.desc())
         ).all()
         if as_of is not None:
             signals = ConceptSignalsDTO(
@@ -2768,19 +2819,79 @@ def project_knowledge_graph(
             state = session.get(UserConceptStateModel, (owner_user_id, c.id))
             signals = _build_concept_signals_dto(state, len(mentions))
 
+        top_quote = ""
+        source_conv_id: str | None = None
+        source_conv_title = ""
+        msg_ids = [m.message_id for m in mentions]
+        if msg_ids:
+            latest_msg = session.get(MessageModel, msg_ids[0])
+            if latest_msg is not None:
+                top_quote = latest_msg.content[:180]
+                source_conv_id = latest_msg.conversation_id
+                conv_row = session.get(ConversationModel, latest_msg.conversation_id)
+                if conv_row is not None:
+                    source_conv_title = conv_row.title
+
+        tags: list[str] = []
+        if msg_ids:
+            ann_rows = session.scalars(
+                select(AnnotationModel).where(
+                    AnnotationModel.message_id.in_(msg_ids),
+                    AnnotationModel.removed_at.is_(None),
+                )
+            ).all()
+            for a in ann_rows:
+                if a.tag not in tags:
+                    tags.append(a.tag)
+
+        deg = degree_by_id.get(cid, 0)
+        importance = round(
+            1.0
+            + len(mentions) * 0.65
+            + deg * 0.85
+            + (1.4 if tags else 0.0),
+            2,
+        )
+        if cid in hierarchy_targets or deg >= 3 or len(mentions) >= 3:
+            h_level = 1
+        elif deg >= 1 or len(mentions) >= 2 or tags:
+            h_level = 2
+        else:
+            h_level = 3
+
+        clean_desc = c.description or ""
+        if clean_desc.startswith("[") and "]" in clean_desc:
+            clean_desc = clean_desc[clean_desc.index("]") + 1 :].strip()
+
         nodes.append(
             GraphNodeDTO(
                 id=c.id,
                 kind="concept",
                 label=c.canonical_name,
-                description=c.description,
+                description=clean_desc,
+                category=raw_categories[cid],
+                hierarchy_level=h_level,
+                importance=importance,
+                tags=tags,
+                top_quote=top_quote,
+                source_conversation_id=source_conv_id,
+                source_conversation_title=source_conv_title,
                 signals=signals,
                 mention_count=len(mentions),
                 open_question_count=0,
             )
         )
 
-    nodes.sort(key=lambda n: n.label.lower())
+    # Ensure every category has at least one level-1 hub node so semantic zoom always shows cluster anchors
+    by_cat: dict[str, list[GraphNodeDTO]] = {}
+    for n in nodes:
+        by_cat.setdefault(n.category, []).append(n)
+    for _cat_name, cat_nodes in by_cat.items():
+        if not any(n.hierarchy_level == 1 for n in cat_nodes):
+            top_node = max(cat_nodes, key=lambda item: item.importance)
+            top_node.hierarchy_level = 1
+
+    nodes.sort(key=lambda n: (-n.importance, n.label.lower()))
     omitted_nodes = max(0, total_candidate_nodes - len(nodes))
     omitted_edges = max(0, total_candidate_edges - len(kept_edges))
 

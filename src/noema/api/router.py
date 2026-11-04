@@ -32,6 +32,7 @@ from noema.api.schemas import (
     MessageAnnotationsResponse,
     MessageListResponse,
     RelatedConceptListResponse,
+    RelatedConversationListResponse,
     ReviseHypothesisRequest,
     SearchResponse,
     SuggestionAcceptRequest,
@@ -52,6 +53,7 @@ from noema.conversations.service import (
     execute_turn,
     format_turn_sse_stream,
     get_conversation,
+    get_related_conversations,
     get_turn_status,
     list_conversations,
     list_messages,
@@ -147,6 +149,18 @@ def delete_conversation_by_id(
 ) -> Response:
     delete_conversation(session, conversation_id)
     return Response(status_code=204)
+
+
+@router.get(
+    "/conversations/{conversation_id}/related",
+    response_model=RelatedConversationListResponse,
+)
+def get_related_conversations_route(
+    conversation_id: str,
+    limit: int = Query(default=8, ge=1, le=25),
+    session: Session = Depends(get_db_session),
+) -> RelatedConversationListResponse:
+    return get_related_conversations(session, conversation_id, limit=limit)
 
 
 @router.get(

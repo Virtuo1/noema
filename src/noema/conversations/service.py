@@ -27,6 +27,8 @@ from noema.api.schemas import (
     CreateTurnRequest,
     MessageDTO,
     MessageListResponse,
+    RelatedConversationDTO,
+    RelatedConversationListResponse,
     SourceReferenceDTO,
     TurnAcceptedResponse,
     TurnStatusResponse,
@@ -49,6 +51,7 @@ from noema.persistence.models import (
 from noema.retrieval.service import (
     build_turn_context,
     cleanup_fts_for_document_ids,
+    hybrid_search,
     index_message_documents,
 )
 from noema.worker.runner import (
@@ -1134,4 +1137,106 @@ def format_turn_sse_stream(
                 f"id: {ev_id}\nevent: knowledge.status\ndata: "
                 f"{json.dumps({'turn_id': turn_id, 'extraction_status': status_dto.extraction_status})}\n\n"
             )
+
+
+def get_related_conversations(
+    session: Session,
+    conversation_id: str,
+    limit: int = 8,
+    owner_user_id: str = DEFAULT_OWNER_USER_ID,
+) -> RelatedConversationListResponse:
+    """Find conversations related to the active conversation via shared concepts and hybrid search."""
+    conv = session.get(ConversationModel, conversation_id)
+    if conv is None or conv.owner_user_id != owner_user_id:
+        return RelatedConversationListResponse(items=[])
+
+    msgs = session.scalars(
+        select(MessageModel)
+        .where(MessageModel.conversation_id == conversation_id)
+        .order_by(MessageModel.sequence_no.desc())
+        .limit(8)
+    ).all()
+    if not msgs:
+        return RelatedConversationListResponse(items=[])
+
+    msg_ids = [m.id for m in msgs]
+    mentions = session.scalars(
+        select(ConceptMentionModel).where(
+            ConceptMentionModel.message_id.in_(msg_ids)
+        )
+    ).all()
+    active_concept_ids = {m.concept_id for m in mentions}
+    concept_names_by_id: dict[str, str] = {}
+    for cid in active_concept_ids:
+        c = session.get(ConceptModel, cid)
+        if c and c.merged_into_concept_id is None:
+            concept_names_by_id[cid] = c.canonical_name
+
+    scores_by_conv: dict[str, float] = {}
+    shared_by_conv: dict[str, list[str]] = {}
+    snippet_by_conv: dict[str, str] = {}
+
+    if active_concept_ids:
+        other_mentions = session.scalars(
+            select(ConceptMentionModel).where(
+                ConceptMentionModel.concept_id.in_(active_concept_ids),
+                ConceptMentionModel.message_id.notin_(msg_ids),
+            )
+        ).all()
+        for om in other_mentions:
+            other_msg = session.get(MessageModel, om.message_id)
+            if other_msg is None or other_msg.conversation_id == conversation_id:
+                continue
+            oc_id = other_msg.conversation_id
+            scores_by_conv[oc_id] = scores_by_conv.get(oc_id, 0.0) + 2.0
+            cname = concept_names_by_id.get(om.concept_id)
+            if cname:
+                bucket = shared_by_conv.setdefault(oc_id, [])
+                if cname not in bucket:
+                    bucket.append(cname)
+            if oc_id not in snippet_by_conv:
+                snippet_by_conv[oc_id] = other_msg.content[:140]
+
+    # Supplement with hybrid search on the latest messages in the active conversation
+    query_text = " ".join(m.content[:160] for m in msgs[:3]).strip()
+    if query_text:
+        search_res = hybrid_search(
+            session,
+            q=query_text,
+            kind="message_chunk",
+            limit=12,
+            owner_user_id=owner_user_id,
+        )
+        for hit in search_res.items:
+            if not hit.conversation_id or hit.conversation_id == conversation_id:
+                continue
+            oc_id = hit.conversation_id
+            scores_by_conv[oc_id] = scores_by_conv.get(oc_id, 0.0) + float(hit.score) * 10.0
+            if oc_id not in snippet_by_conv:
+                snippet_by_conv[oc_id] = hit.excerpt[:140]
+
+    ranked_conv_ids = sorted(
+        scores_by_conv.keys(),
+        key=lambda cid: scores_by_conv[cid],
+        reverse=True,
+    )[:limit]
+
+    items: list[RelatedConversationDTO] = []
+    for cid in ranked_conv_ids:
+        c_row = session.get(ConversationModel, cid)
+        if c_row is None or c_row.archived_at is not None:
+            continue
+        items.append(
+            RelatedConversationDTO(
+                id=c_row.id,
+                title=c_row.title,
+                updated_at=c_row.updated_at,
+                shared_concepts=shared_by_conv.get(cid, [])[:4],
+                snippet=snippet_by_conv.get(cid, ""),
+                score=round(scores_by_conv[cid], 3),
+            )
+        )
+
+    return RelatedConversationListResponse(items=items)
+
 

@@ -31,6 +31,15 @@ export interface ConversationDTO {
   extraction_status: string | null;
 }
 
+export interface RelatedConversationDTO {
+  conversation_id: string;
+  title: string;
+  updated_at: string;
+  shared_concepts: string[];
+  score: number;
+  snippet: string;
+}
+
 export interface SourceReferenceDTO {
   source_id: string;
   kind: "message" | "concept" | "relation" | "hypothesis";
@@ -127,6 +136,13 @@ export interface GraphNodeDTO {
   kind: "concept";
   label: string;
   description: string;
+  category?: string;
+  hierarchy_level?: number;
+  importance?: number;
+  tags?: string[];
+  top_quote?: string;
+  source_conversation_id?: string | null;
+  source_conversation_title?: string;
   signals: ConceptSignalsDTO;
   mention_count: number;
   open_question_count: number;

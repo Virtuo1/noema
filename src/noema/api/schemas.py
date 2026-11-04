@@ -188,9 +188,29 @@ class GraphNodeDTO(BaseModel):
     kind: Literal["concept"] = "concept"
     label: str
     description: str = ""
+    category: str = "General"
+    hierarchy_level: int = 2
+    importance: float = 1.0
+    tags: list[str] = Field(default_factory=list)
+    top_quote: str = ""
+    source_conversation_id: str | None = None
+    source_conversation_title: str = ""
     signals: ConceptSignalsDTO
     mention_count: int = 0
     open_question_count: int = 0
+
+
+class RelatedConversationDTO(BaseModel):
+    id: str
+    title: str
+    updated_at: str
+    shared_concepts: list[str] = Field(default_factory=list)
+    snippet: str = ""
+    score: float = 0.0
+
+
+class RelatedConversationListResponse(BaseModel):
+    items: list[RelatedConversationDTO] = Field(default_factory=list)
 
 
 class GraphEdgeDTO(BaseModel):

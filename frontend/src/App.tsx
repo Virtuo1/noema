@@ -1,79 +1,99 @@
-import React, { useState } from "react";
+/**
+ * Noema — Seamless Full-Screen Graph & Chat Workspace
+ * - Default UI mode: Full-screen Obsidian-style hierarchical & semantic-zoom knowledge graph
+ * - Floating frosted-glass sidebar (with live Related Chats in chat mode)
+ * - Floating frosted-glass bottom question box with #tag autocomplete popup
+ * - Submitting a question in Graph mode transitions seamlessly into Chat view
+ */
+
+import React, { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "./api/client";
-import type { AnnotationTag } from "./api/types";
+import type { UpdateAISettingsPayload } from "./api/types";
 import { ConceptInspector } from "./components/ConceptInspector";
+import { FloatingComposer } from "./components/FloatingComposer";
+import { FloatingSidebar } from "./components/FloatingSidebar";
 import { GraphView } from "./components/GraphView";
 import { SettingsAndOwnershipView } from "./components/SettingsAndOwnershipView";
 import { TimelineView } from "./components/TimelineView";
 
-const EXTRA_TAGS: AnnotationTag[] = [
-  "question",
-  "connection",
-  "hypothesis",
-  "revisit",
-  "important",
-];
-
-type ActiveSurface = "chat" | "graph" | "timeline" | "settings";
-
-export default function App(): React.ReactElement {
+export const App: React.FC = () => {
   const queryClient = useQueryClient();
 
-  const [activeSurface, setActiveSurface] = useState<ActiveSurface>("chat");
-  const [selectedConversationId, setSelectedConversationId] = useState<
+  const [activeConversationId, setActiveConversationId] = useState<
     string | null
   >(null);
+  const [composerText, setComposerText] = useState<string>("");
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [streamingUserText, setStreamingUserText] = useState<string | null>(
+    null,
+  );
+  const [searchFilter, setSearchFilter] = useState<string>("");
+
+  // Graph is the default UI mode filling the viewport
+  const [activeSurface, setActiveSurface] = useState<"graph" | "chat">("graph");
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(
     null,
   );
-  const [messageInput, setMessageInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeLayers, setActiveLayers] = useState<string[]>([
-    "user",
-    "world",
-    "suggested",
-  ]);
-  const [asOfTimestamp, setAsOfTimestamp] = useState("");
+
+  // Overlays
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [timelineOpen, setTimelineOpen] = useState<boolean>(false);
   const [lastFailedTurnId, setLastFailedTurnId] = useState<string | null>(null);
-  const [statusNotice, setStatusNotice] = useState<string | null>(null);
-  const [openTagMenuMsgId, setOpenTagMenuMsgId] = useState<string | null>(null);
-  const [optimisticUserText, setOptimisticUserText] = useState<string | null>(
-    null,
-  );
-  const [streamingAssistantText, setStreamingAssistantText] =
-    useState<string>("");
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Queries
   const conversationsQuery = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => apiClient.listConversations(),
+    queryKey: ["conversations", searchFilter],
+    queryFn: () => apiClient.listConversations(searchFilter || undefined),
   });
 
-  const activeConvId =
-    selectedConversationId ?? conversationsQuery.data?.[0]?.id ?? null;
+  // Ensure an active conversation exists in background without forcing Chat view
+  useEffect(() => {
+    if (
+      !activeConversationId &&
+      conversationsQuery.data &&
+      conversationsQuery.data.length > 0
+    ) {
+      setActiveConversationId(conversationsQuery.data[0].id);
+    }
+  }, [activeConversationId, conversationsQuery.data]);
 
   const messagesQuery = useQuery({
-    queryKey: ["messages", activeConvId],
+    queryKey: ["messages", activeConversationId],
     queryFn: () =>
-      activeConvId ? apiClient.listMessages(activeConvId) : Promise.resolve([]),
-    enabled: Boolean(activeConvId),
+      activeConversationId
+        ? apiClient.listMessages(activeConversationId)
+        : Promise.resolve([]),
+    enabled: Boolean(activeConversationId),
+  });
+
+  // Continuously updated Related Chats for the active conversation
+  const relatedConversationsQuery = useQuery({
+    queryKey: [
+      "related-conversations",
+      activeConversationId,
+      messagesQuery.data?.length ?? 0,
+    ],
+    queryFn: () =>
+      activeConversationId
+        ? apiClient.listRelatedConversations(activeConversationId)
+        : Promise.resolve([]),
+    enabled: Boolean(activeConversationId),
+    refetchInterval: 4000,
   });
 
   const graphQuery = useQuery({
-    queryKey: ["graph", selectedConceptId, activeLayers, asOfTimestamp],
+    queryKey: ["graph"],
     queryFn: () =>
       apiClient.getGraph({
         focusConceptId: null,
-        layers: activeLayers,
-        asOf: asOfTimestamp.trim() || null,
+        layers: ["user_established", "world", "suggested"],
+        asOf: null,
       }),
-  });
-
-  const pendingSuggestionsQuery = useQuery({
-    queryKey: ["suggestions", "pending"],
-    queryFn: () => apiClient.listSuggestions("pending"),
+    refetchInterval: 4000,
   });
 
   const conceptDetailQuery = useQuery({
@@ -86,7 +106,7 @@ export default function App(): React.ReactElement {
   });
 
   const conceptEvidenceQuery = useQuery({
-    queryKey: ["conceptEvidence", selectedConceptId],
+    queryKey: ["concept-evidence", selectedConceptId],
     queryFn: () =>
       selectedConceptId
         ? apiClient.getConceptEvidence(selectedConceptId)
@@ -95,792 +115,469 @@ export default function App(): React.ReactElement {
   });
 
   const eventsQuery = useQuery({
-    queryKey: ["events", selectedConceptId],
-    queryFn: () => apiClient.listEvents(selectedConceptId),
+    queryKey: ["events"],
+    queryFn: () => apiClient.listEvents(),
+    enabled: timelineOpen,
   });
 
-  const aiSettingsQuery = useQuery({
-    queryKey: ["aiSettings"],
+  const settingsQuery = useQuery({
+    queryKey: ["ai-settings"],
     queryFn: () => apiClient.getAISettings(),
   });
 
-  const searchResultsQuery = useQuery({
-    queryKey: ["search", searchQuery],
-    queryFn: () =>
-      searchQuery.trim()
-        ? apiClient.search(searchQuery.trim())
-        : Promise.resolve([]),
-    enabled: searchQuery.trim().length > 1,
-  });
-
-  const invalidateAll = () => {
-    void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    void queryClient.invalidateQueries({ queryKey: ["messages"] });
-    void queryClient.invalidateQueries({ queryKey: ["graph"] });
-    void queryClient.invalidateQueries({ queryKey: ["suggestions"] });
-    void queryClient.invalidateQueries({ queryKey: ["concept"] });
-    void queryClient.invalidateQueries({ queryKey: ["conceptEvidence"] });
-    void queryClient.invalidateQueries({ queryKey: ["events"] });
-  };
-
-  const createConvMutation = useMutation({
-    mutationFn: (title?: string) => apiClient.createConversation(title ?? ""),
+  // Mutations
+  const createConversationMutation = useMutation({
+    mutationFn: (title: string) => apiClient.createConversation(title),
     onSuccess: (conv) => {
-      setSelectedConversationId(conv.id);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      setActiveConversationId(conv.id);
       setActiveSurface("chat");
-      invalidateAll();
-    },
-  });
-
-  const deleteConvMutation = useMutation({
-    mutationFn: (convId: string) => apiClient.deleteConversation(convId),
-    onSuccess: () => {
-      setSelectedConversationId(null);
-      invalidateAll();
     },
   });
 
   const sendTurnMutation = useMutation({
-    onMutate: (content: string) => {
-      setMessageInput("");
-      setOptimisticUserText(content);
-      setStreamingAssistantText("");
-      setIsStreaming(true);
-      setLastFailedTurnId(null);
-      setStatusNotice(null);
-    },
     mutationFn: async (content: string) => {
-      let targetConvId = activeConvId;
-      if (!targetConvId) {
+      let convId = activeConversationId;
+      if (!convId) {
         const created = await apiClient.createConversation("");
-        targetConvId = created.id;
-        setSelectedConversationId(created.id);
+        convId = created.id;
+        setActiveConversationId(convId);
       }
+      setStreamingUserText(content);
+      setStreamingContent("");
       await apiClient.sendTurnStream(
-        targetConvId,
+        convId,
         content,
         {
           onDelta: (delta) => {
-            setStreamingAssistantText((prev) => prev + delta);
+            setStreamingContent((prev) => (prev ?? "") + delta);
           },
-          onFailed: (turnId, message) => {
+          onFailed: (turnId) => {
             if (turnId) setLastFailedTurnId(turnId);
-            setStatusNotice(message);
           },
         },
         "personalized",
       );
     },
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["messages"] });
-      setOptimisticUserText(null);
-      setStreamingAssistantText("");
-      setIsStreaming(false);
-      invalidateAll();
-      window.setTimeout(() => {
-        invalidateAll();
-      }, 2200);
+    onSettled: () => {
+      setStreamingUserText(null);
+      setStreamingContent(null);
+      setComposerText("");
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["related-conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["graph"] });
     },
   });
 
   const retryTurnMutation = useMutation({
     mutationFn: (turnId: string) => apiClient.retryTurn(turnId),
-    onSuccess: (res) => {
-      if (res.status === "succeeded") {
-        setLastFailedTurnId(null);
-        setStatusNotice(null);
-      }
-      invalidateAll();
-    },
-  });
-
-  const addAnnotationMutation = useMutation({
-    mutationFn: ({
-      messageId,
-      tag,
-    }: {
-      messageId: string;
-      tag: AnnotationTag;
-    }) => apiClient.addAnnotation(messageId, tag, null),
     onSuccess: () => {
-      setOpenTagMenuMsgId(null);
-      invalidateAll();
-    },
-  });
-
-  const removeAnnotationMutation = useMutation({
-    mutationFn: (annotationId: string) =>
-      apiClient.removeAnnotation(annotationId),
-    onSuccess: () => {
-      invalidateAll();
-    },
-  });
-
-  const acceptSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: string) =>
-      apiClient.acceptSuggestion(suggestionId),
-    onSuccess: () => {
-      invalidateAll();
-    },
-  });
-
-  const rejectSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: string) =>
-      apiClient.rejectSuggestion(suggestionId),
-    onSuccess: () => {
-      invalidateAll();
-    },
-  });
-
-  const dismissSuggestionMutation = useMutation({
-    mutationFn: (suggestionId: string) =>
-      apiClient.dismissSuggestion(suggestionId),
-    onSuccess: () => {
-      invalidateAll();
-    },
-  });
-
-  const withdrawRelationMutation = useMutation({
-    mutationFn: (relationId: string) => apiClient.withdrawRelation(relationId),
-    onSuccess: () => {
-      invalidateAll();
-    },
-  });
-
-  const reviewSignalMutation = useMutation({
-    mutationFn: ({
-      conceptId,
-      evidenceId,
-      action,
-    }: {
-      conceptId: string;
-      evidenceId: string;
-      action: "confirm" | "dismiss";
-    }) => apiClient.reviewCandidateSignal(conceptId, evidenceId, action),
-    onSuccess: () => {
-      invalidateAll();
+      setLastFailedTurnId(null);
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+      queryClient.invalidateQueries({ queryKey: ["graph"] });
     },
   });
 
   const createRelationMutation = useMutation({
-    mutationFn: ({
-      sourceId,
-      targetId,
-      predicate,
-      explanation,
-    }: {
-      sourceId: string;
-      targetId: string;
+    mutationFn: (payload: {
+      conceptId: string;
+      targetConceptId: string;
       predicate: string;
       explanation: string;
     }) =>
-      apiClient.createUserRelation(sourceId, targetId, predicate, explanation),
+      apiClient.createUserRelation(
+        payload.conceptId,
+        payload.targetConceptId,
+        payload.predicate,
+        payload.explanation,
+      ),
     onSuccess: () => {
-      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["graph"] });
+      queryClient.invalidateQueries({ queryKey: ["concept"] });
+      queryClient.invalidateQueries({ queryKey: ["concept-evidence"] });
     },
   });
 
-  const mergeConceptMutation = useMutation({
-    mutationFn: ({
-      sourceId,
-      targetId,
-    }: {
-      sourceId: string;
-      targetId: string;
-    }) => apiClient.mergeConcept(sourceId, targetId),
-    onSuccess: (_res, vars) => {
-      setSelectedConceptId(vars.targetId);
-      invalidateAll();
+  const reviewSignalMutation = useMutation({
+    mutationFn: (payload: {
+      conceptId: string;
+      evidenceId: string;
+      decision: "confirm" | "dismiss";
+    }) =>
+      apiClient.reviewCandidateSignal(
+        payload.conceptId,
+        payload.evidenceId,
+        payload.decision,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["concept"] });
+      queryClient.invalidateQueries({ queryKey: ["concept-evidence"] });
+      queryClient.invalidateQueries({ queryKey: ["graph"] });
     },
   });
 
-  const handleToggleLayer = (layer: string) => {
-    setActiveLayers((prev) =>
-      prev.includes(layer) ? prev.filter((l) => l !== layer) : [...prev, layer],
-    );
+  useEffect(() => {
+    if (
+      activeSurface === "chat" &&
+      typeof messagesEndRef.current?.scrollIntoView === "function"
+    ) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messagesQuery.data, streamingContent, activeSurface]);
+
+  // Submitting from the bottom box seamlessly transitions into Chat view
+  const handleSendQuestion = () => {
+    const trimmed = composerText.trim();
+    if (!trimmed) return;
+    setSelectedConceptId(null);
+    setActiveSurface("chat");
+    sendTurnMutation.mutate(trimmed);
+  };
+
+  const handleJumpToMessage = (conversationId: string | null) => {
+    if (conversationId) {
+      setActiveConversationId(conversationId);
+      setSelectedConceptId(null);
+      setActiveSurface("chat");
+    }
   };
 
   const messages = messagesQuery.data ?? [];
-  const pendingSuggestions = pendingSuggestionsQuery.data ?? [];
-  const topSuggestion = pendingSuggestions[0];
-
-  const activeProviderDisplay =
-    aiSettingsQuery.data?.providers.find(
-      (p) => p.provider === aiSettingsQuery.data?.conversation_provider,
-    )?.display_name ?? "Local";
+  const activeProviderCap = (settingsQuery.data?.providers ?? []).find(
+    (p) => p.provider === settingsQuery.data?.conversation_provider,
+  );
+  const isAIReady = Boolean(
+    !activeProviderCap?.is_remote || activeProviderCap?.has_configured_secret,
+  );
+  const providerLabel =
+    settingsQuery.data?.conversation_provider === "google_gemini"
+      ? `Gemini (${settingsQuery.data.conversation_model})`
+      : settingsQuery.data?.conversation_provider === "openai_compatible"
+        ? `OpenAI (${settingsQuery.data.conversation_model})`
+        : settingsQuery.data?.conversation_provider === "anthropic"
+          ? "Anthropic"
+          : settingsQuery.data?.conversation_provider === "ollama"
+            ? "Ollama"
+            : "Connect API Key";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
-      {/* Minimal Left Sidebar */}
-      <aside
-        aria-label="Conversations and Navigation"
-        className="w-64 shrink-0 border-r border-zinc-900 bg-zinc-950 flex flex-col justify-between p-3 select-none"
-      >
-        <div className="space-y-3 flex-1 flex flex-col min-h-0">
-          {/* Brand & Quick Model Pill */}
-          <div className="flex items-center justify-between px-1.5 pt-1">
-            <h1 className="text-base font-semibold tracking-tight text-zinc-100">
-              Noema
-            </h1>
-            <button
-              type="button"
-              onClick={() => setActiveSurface("settings")}
-              title="Configure AI Models & API Keys"
-              className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 truncate max-w-[130px] transition"
-            >
-              ⚙ {activeProviderDisplay}
-            </button>
-          </div>
+    <div className="relative w-screen h-screen bg-black text-zinc-100 overflow-hidden font-sans">
+      {/* Hovering Frosted-Glass Left Sidebar (Visible in both Graph and Chat views) */}
+      <FloatingSidebar
+        isOpen={sidebarOpen}
+        onToggleOpen={() => setSidebarOpen((prev) => !prev)}
+        activeSurface={activeSurface}
+        onSwitchSurface={(surface) => {
+          setActiveSurface(surface);
+          if (surface === "chat") {
+            setSelectedConceptId(null);
+          }
+        }}
+        conversations={conversationsQuery.data ?? []}
+        relatedConversations={relatedConversationsQuery.data ?? []}
+        activeConversationId={activeConversationId}
+        onSelectConversation={(id) => {
+          setActiveConversationId(id);
+          setSelectedConceptId(null);
+          setActiveSurface("chat");
+        }}
+        onNewChat={() => createConversationMutation.mutate("")}
+        searchFilter={searchFilter}
+        onSearchFilterChange={setSearchFilter}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenTimeline={() => setTimelineOpen(true)}
+        isAIReady={isAIReady}
+        providerLabel={providerLabel}
+        graphNodeCount={graphQuery.data?.nodes.length ?? 0}
+      />
 
-          {/* New Chat Button */}
-          <button
-            type="button"
-            onClick={() => createConvMutation.mutate("")}
-            className="w-full py-2 px-3 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium text-left flex items-center justify-between transition"
-          >
-            <span>New conversation</span>
-            <span className="text-sm leading-none">+</span>
-          </button>
-
-          {/* Compact Search */}
-          <div className="relative">
-            <input
-              id="hybrid-search-input"
-              type="search"
-              placeholder="Search notes & concepts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-900/80 border border-zinc-800/90 focus:border-zinc-700 focus:outline-none rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500"
-            />
-            {searchQuery.trim().length > 1 &&
-              searchResultsQuery.data &&
-              searchResultsQuery.data.length > 0 && (
-                <ul className="mt-1.5 space-y-1 bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 max-h-56 overflow-y-auto shadow-xl">
-                  {searchResultsQuery.data.map((hit) => (
-                    <li
-                      key={hit.document_id}
-                      className="p-2 rounded hover:bg-zinc-800/70 text-xs space-y-1"
-                    >
-                      <p className="text-zinc-200 line-clamp-2">
-                        {hit.excerpt}
-                      </p>
-                      <div className="flex gap-2 text-[11px]">
-                        {hit.conversation_id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedConversationId(hit.conversation_id!);
-                              setActiveSurface("chat");
-                              setSearchQuery("");
-                            }}
-                            className="text-indigo-400 hover:underline"
-                          >
-                            Open chat
-                          </button>
-                        )}
-                        {hit.concept_id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedConceptId(hit.concept_id!);
-                              setSearchQuery("");
-                            }}
-                            className="text-emerald-400 hover:underline"
-                          >
-                            Inspect concept
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-          </div>
-
-          {/* Conversation List */}
-          <div className="flex-1 overflow-y-auto space-y-0.5 pt-1">
-            {conversationsQuery.data && conversationsQuery.data.length > 0 ? (
-              conversationsQuery.data.map((conv) => {
-                const isActive =
-                  conv.id === activeConvId && activeSurface === "chat";
-                return (
-                  <div
-                    key={conv.id}
-                    className={`group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition ${
-                      isActive
-                        ? "bg-zinc-900 text-zinc-100"
-                        : "text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedConversationId(conv.id);
-                        setActiveSurface("chat");
-                      }}
-                      className="text-left truncate flex-1 py-0.5"
-                    >
-                      {conv.title || "New conversation"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Delete conversation ${conv.title}`}
-                      onClick={() => deleteConvMutation.mutate(conv.id)}
-                      className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 pl-2 text-[11px]"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-xs text-zinc-500 px-2 py-4">
-                Your conversations will appear here.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Clean Bottom Surface Navigation */}
-        <nav
-          aria-label="Workspace Surfaces"
-          className="pt-3 border-t border-zinc-900 space-y-1 text-xs"
+      {/* Background Surface: Seamless transition between Full-Screen Graph and Chat Stream */}
+      {activeSurface === "graph" ? (
+        <GraphView
+          graph={graphQuery.data}
+          isLoading={graphQuery.isLoading}
+          selectedConceptId={selectedConceptId}
+          onSelectConcept={(conceptId) => setSelectedConceptId(conceptId)}
+          onOpenConversation={(convId) => {
+            setActiveConversationId(convId);
+            setSelectedConceptId(null);
+            setActiveSurface("chat");
+          }}
+        />
+      ) : (
+        <main
+          aria-label="Chat surface"
+          className={`w-full h-full overflow-y-auto pt-8 pb-36 px-6 transition-all duration-300 ${
+            sidebarOpen ? "md:pl-[20rem]" : ""
+          }`}
         >
-          {(
-            [
-              { id: "chat", label: "Chat Workspace (Primary)" },
-              {
-                id: "graph",
-                label: `Knowledge Map (${graphQuery.data?.counts.nodes ?? 0})`,
-              },
-              {
-                id: "timeline",
-                label: `Timeline (${eventsQuery.data?.length ?? 0})`,
-              },
-              { id: "settings", label: "AI Models & Keys" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveSurface(tab.id)}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg transition ${
-                activeSurface === tab.id
-                  ? "bg-zinc-900 text-zinc-100 font-medium"
-                  : "text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Main Workspace Area */}
-      <main className="flex-1 flex flex-col min-w-0 relative">
-        {statusNotice && (
-          <div
-            role="status"
-            className="mx-auto mt-3 max-w-2xl w-full px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 flex items-center justify-between"
-          >
-            <span>{statusNotice}</span>
-            <button
-              type="button"
-              onClick={() => setStatusNotice(null)}
-              className="text-zinc-400 hover:text-zinc-200 ml-3"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {activeSurface === "chat" && (
-          <section
-            aria-label="Conversation Workspace"
-            className="flex-1 flex flex-col max-w-3xl w-full mx-auto px-4 sm:px-6"
-          >
-            {/* Message Stream */}
-            <div className="flex-1 py-8 space-y-6 overflow-y-auto">
-              {messages.length === 0 && !isStreaming ? (
-                <div className="py-24 text-center space-y-4">
-                  <h2 className="text-xl font-medium text-zinc-100">
-                    What are you exploring today?
-                  </h2>
-                  <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
-                    Just chat naturally. A lightweight background organizer
-                    quietly extracts key concepts and links your ideas over
-                    time.
-                  </p>
-                  {aiSettingsQuery.data?.conversation_provider ===
-                    "local_heuristic" && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveSurface("settings")}
-                        className="px-3.5 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs text-zinc-300 transition"
-                      >
-                        Connect OpenAI, Gemini, Claude, or Local Ollama →
-                      </button>
-                    </div>
-                  )}
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Subtle API Key Notice if external provider has no key */}
+            {settingsQuery.data && !isAIReady && (
+              <div className="rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/15 p-4 flex items-center justify-between gap-4">
+                <div className="text-xs text-zinc-300">
+                  Connect your API key to chat with{" "}
+                  <strong className="text-white">
+                    {settingsQuery.data.conversation_provider}
+                  </strong>
+                  .
                 </div>
-              ) : (
-                messages.map((msg) => {
-                  const uniqueMentions = Array.from(
-                    new Map(
-                      msg.mentions.map((m) => [m.concept_id, m]),
-                    ).values(),
-                  );
-                  return (
-                    <article
-                      key={msg.id}
-                      className={`group space-y-2 ${
-                        msg.role === "user"
-                          ? "ml-auto max-w-xl bg-zinc-900/90 border border-zinc-800/80 rounded-2xl px-4 py-3"
-                          : "max-w-2xl py-1"
-                      }`}
-                    >
-                      <div className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
-                        {msg.content}
-                      </div>
-
-                      {/* Compact Collapsible Prior Context Pill */}
-                      {msg.sources.length > 0 && (
-                        <details className="text-xs text-zinc-400 pt-1">
-                          <summary className="cursor-pointer hover:text-zinc-200 inline-flex items-center gap-1.5">
-                            <span className="text-indigo-400">
-                              Referenced {msg.sources.length} prior note
-                              {msg.sources.length > 1 ? "s" : ""}
-                            </span>
-                          </summary>
-                          <div className="mt-2 space-y-1.5 pl-3 border-l border-zinc-800">
-                            {msg.sources.map((src) => (
-                              <div
-                                key={src.source_id}
-                                className="flex items-center justify-between gap-2 text-zinc-300"
-                              >
-                                <span className="truncate italic">
-                                  "{src.excerpt}"
-                                </span>
-                                {src.conversation_id && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setSelectedConversationId(
-                                        src.conversation_id!,
-                                      )
-                                    }
-                                    className="text-indigo-400 hover:underline shrink-0 text-[11px]"
-                                  >
-                                    Open →
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-
-                      {/* Subtle Concept Chips + Active Annotations + Hover Action Bar */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {uniqueMentions.map((m) => (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => setSelectedConceptId(m.concept_id)}
-                              className="px-2 py-0.5 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800/90 text-[11px] text-zinc-300 transition"
-                            >
-                              {m.canonical_name}
-                            </button>
-                          ))}
-
-                          {msg.annotations.map((ann) => (
-                            <span
-                              key={ann.id}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 text-[11px]"
-                            >
-                              <span>#{ann.tag}</span>
-                              <button
-                                type="button"
-                                aria-label={`Undo #${ann.tag} annotation`}
-                                onClick={() =>
-                                  removeAnnotationMutation.mutate(ann.id)
-                                }
-                                className="text-emerald-400 hover:text-white ml-0.5"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* Subtle Hover-Only Quick Reactions */}
-                        <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition flex items-center gap-1 relative">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              addAnnotationMutation.mutate({
-                                messageId: msg.id,
-                                tag: "aha",
-                              })
-                            }
-                            className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 text-[11px] text-zinc-400 hover:text-emerald-300"
-                          >
-                            💡 Aha
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              addAnnotationMutation.mutate({
-                                messageId: msg.id,
-                                tag: "confused",
-                              })
-                            }
-                            className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 text-[11px] text-zinc-400 hover:text-amber-300"
-                          >
-                            🤔 Confused
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="More tags"
-                            onClick={() =>
-                              setOpenTagMenuMsgId(
-                                openTagMenuMsgId === msg.id ? null : msg.id,
-                              )
-                            }
-                            className="px-1.5 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 text-[11px] text-zinc-400"
-                          >
-                            +
-                          </button>
-                          {openTagMenuMsgId === msg.id && (
-                            <div className="absolute right-0 bottom-7 z-20 bg-zinc-900 border border-zinc-800 rounded-lg p-1 flex gap-1 shadow-xl">
-                              {EXTRA_TAGS.map((tag) => (
-                                <button
-                                  key={tag}
-                                  type="button"
-                                  onClick={() =>
-                                    addAnnotationMutation.mutate({
-                                      messageId: msg.id,
-                                      tag,
-                                    })
-                                  }
-                                  className="px-2 py-0.5 rounded hover:bg-zinc-800 text-[11px] text-zinc-300"
-                                >
-                                  #{tag}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-
-              {/* Live Optimistic User Bubble + Real-Time Streaming Assistant Response */}
-              {isStreaming && (
-                <>
-                  {optimisticUserText &&
-                    messages[messages.length - 1]?.content !==
-                      optimisticUserText && (
-                      <article className="ml-auto max-w-xl bg-zinc-900/90 border border-zinc-800/80 rounded-2xl px-4 py-3">
-                        <div className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
-                          {optimisticUserText}
-                        </div>
-                      </article>
-                    )}
-                  <article className="max-w-2xl py-1">
-                    {streamingAssistantText ? (
-                      <div className="text-sm text-zinc-100 whitespace-pre-wrap leading-relaxed">
-                        {streamingAssistantText}
-                        <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-zinc-400 animate-pulse" />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-xs text-zinc-400 py-1">
-                        <span className="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-                        <span>Thinking...</span>
-                      </div>
-                    )}
-                  </article>
-                </>
-              )}
-
-              {/* Failed Turn Retry Banner */}
-              {lastFailedTurnId && (
-                <div className="p-3 rounded-xl border border-rose-900/70 bg-rose-950/20 flex items-center justify-between text-xs text-rose-200">
-                  <span>
-                    Could not reach the AI provider. Your message was saved.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => retryTurnMutation.mutate(lastFailedTurnId)}
-                    className="px-3 py-1 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-medium"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Single-Line Quiet Suggestion Pill (when available) */}
-            {topSuggestion && (
-              <div className="mb-2 px-3.5 py-2 rounded-xl border border-zinc-800 bg-zinc-900/70 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="text-zinc-300">
-                  <span className="text-amber-300 font-medium">
-                    Suggested link:
-                  </span>{" "}
-                  {topSuggestion.subject_name} → {topSuggestion.predicate_label}{" "}
-                  → {topSuggestion.object_name}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      acceptSuggestionMutation.mutate(topSuggestion.id)
-                    }
-                    className="px-2.5 py-0.5 rounded-md bg-emerald-700 hover:bg-emerald-600 text-white"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      rejectSuggestionMutation.mutate(topSuggestion.id)
-                    }
-                    className="px-2 py-0.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                  >
-                    Ignore
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      dismissSuggestionMutation.mutate(topSuggestion.id)
-                    }
-                    className="px-1.5 py-0.5 text-zinc-500 hover:text-zinc-300"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Clean Chat Composer */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!messageInput.trim()) return;
-                sendTurnMutation.mutate(messageInput);
-              }}
-              className="pb-6 pt-2"
-            >
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 focus-within:border-zinc-700 rounded-2xl px-3.5 py-2 shadow-sm">
-                <input
-                  type="text"
-                  aria-label="Message or #command input"
-                  placeholder="Ask anything, or include #aha or #confused..."
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  className="flex-1 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
-                />
                 <button
-                  type="submit"
-                  disabled={!messageInput.trim() || sendTurnMutation.isPending}
-                  className="px-3.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-white disabled:opacity-30 text-xs font-medium text-zinc-950 transition"
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="shrink-0 rounded-xl bg-white text-black font-medium px-3 py-1.5 text-xs"
                 >
-                  {sendTurnMutation.isPending ? "..." : "Send"}
+                  Connect Key
                 </button>
               </div>
-            </form>
-          </section>
-        )}
+            )}
 
-        {activeSurface === "graph" && (
-          <GraphView
-            graph={graphQuery.data}
-            isLoading={graphQuery.isLoading}
-            selectedConceptId={selectedConceptId}
-            onSelectConcept={(cid) => setSelectedConceptId(cid)}
-            activeLayers={activeLayers}
-            onToggleLayer={handleToggleLayer}
-            asOfTimestamp={asOfTimestamp}
-            onChangeAsOf={setAsOfTimestamp}
-            onReturnToChat={() => setActiveSurface("chat")}
-            onAcceptSuggestion={(sid) => acceptSuggestionMutation.mutate(sid)}
-            onRejectSuggestion={(sid) => rejectSuggestionMutation.mutate(sid)}
-          />
-        )}
+            {/* Empty Conversation State */}
+            {messages.length === 0 && streamingUserText === null && (
+              <div className="py-24 text-center space-y-3">
+                <h2 className="text-xl font-medium text-white tracking-tight">
+                  Start exploring a topic
+                </h2>
+                <p className="text-xs text-zinc-500 max-w-md mx-auto leading-relaxed">
+                  Type a question below. Use{" "}
+                  <span className="text-zinc-300 font-mono">#</span> in your
+                  message to tag key moments (like{" "}
+                  <span className="text-zinc-300 font-mono">#aha</span> or{" "}
+                  <span className="text-zinc-300 font-mono">#confused</span>) —
+                  Noema automatically categorizes and links your knowledge in
+                  the background.
+                </p>
+              </div>
+            )}
 
-        {activeSurface === "timeline" && (
-          <TimelineView
-            events={eventsQuery.data ?? []}
-            onReturnToChat={() => setActiveSurface("chat")}
-            onSelectConcept={(cid) => setSelectedConceptId(cid)}
-            onJumpToConversation={(convId) => {
-              setSelectedConversationId(convId);
-              setActiveSurface("chat");
-            }}
-          />
-        )}
+            {/* Message Stream */}
+            {messages.map((msg) => {
+              const isUser = msg.role === "user";
+              return (
+                <article
+                  key={msg.id}
+                  className={`flex flex-col ${
+                    isUser ? "items-end" : "items-start"
+                  }`}
+                >
+                  <div
+                    className={`max-w-[88%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed ${
+                      isUser
+                        ? "bg-white text-black font-normal"
+                        : "bg-white/[0.04] border border-white/10 text-zinc-100"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
 
-        {activeSurface === "settings" && (
-          <SettingsAndOwnershipView
-            settings={aiSettingsQuery.data}
-            onUpdateSettings={async (payload) => {
-              await apiClient.updateAISettings(payload);
-              await queryClient.invalidateQueries({
-                queryKey: ["aiSettings"],
-              });
-            }}
-            onValidateProvider={(provider, localUrl, apiKey) =>
-              apiClient.validateAISettings(provider, localUrl, apiKey)
-            }
-            onExportWorkspace={() => apiClient.exportWorkspace()}
-            onReturnToChat={() => setActiveSurface("chat")}
-          />
-        )}
+                    {/* Inline saved tags on message */}
+                    {msg.annotations.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {msg.annotations.map((ann) => (
+                          <span
+                            key={ann.id}
+                            className={`inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded-md ${
+                              isUser
+                                ? "bg-black/10 text-black"
+                                : "bg-white/10 text-zinc-200"
+                            }`}
+                          >
+                            #{ann.tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-        {/* Slide-Over Concept Drawer (Only visible when a concept is clicked) */}
-        {selectedConceptId && (
+                  {/* Subtle clickable concept pills under assistant messages */}
+                  {!isUser && msg.mentions.length > 0 && (
+                    <div className="mt-1.5 px-1 flex flex-wrap items-center gap-1.5">
+                      {msg.mentions.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedConceptId(m.concept_id);
+                          }}
+                          className="text-[11px] text-zinc-500 hover:text-white px-2 py-0.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 transition-colors"
+                        >
+                          {m.canonical_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+
+            {/* Live Streaming Turn Preview */}
+            {streamingUserText !== null && (
+              <>
+                <article className="flex flex-col items-end">
+                  <div className="max-w-[88%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed bg-white text-black">
+                    <p className="whitespace-pre-wrap">{streamingUserText}</p>
+                  </div>
+                </article>
+                <article className="flex flex-col items-start">
+                  <div className="max-w-[88%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed bg-white/[0.04] border border-white/10 text-zinc-100">
+                    {streamingContent ? (
+                      <p className="whitespace-pre-wrap">{streamingContent}</p>
+                    ) : (
+                      <span className="text-xs text-zinc-500 animate-pulse">
+                        Thinking...
+                      </span>
+                    )}
+                  </div>
+                </article>
+              </>
+            )}
+
+            {/* Failed Turn Retry Banner */}
+            {lastFailedTurnId && (
+              <div
+                role="alert"
+                className="rounded-2xl border border-white/20 bg-white/[0.05] p-4 flex items-center justify-between"
+              >
+                <div className="text-xs text-zinc-200">
+                  Response interrupted. Your message is safely saved.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => retryTurnMutation.mutate(lastFailedTurnId)}
+                  className="rounded-xl bg-white px-3 py-1.5 text-xs font-medium text-black"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+        </main>
+      )}
+
+      {/* Floating Frosted-Glass Concept Drawer (when a node or concept pill is clicked) */}
+      {selectedConceptId && (
+        <div className="fixed top-5 bottom-24 right-5 z-30 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-white/15 bg-black/85 backdrop-blur-2xl">
           <ConceptInspector
             concept={conceptDetailQuery.data}
             evidence={conceptEvidenceQuery.data}
             allConcepts={graphQuery.data?.nodes ?? []}
             onClose={() => setSelectedConceptId(null)}
-            onJumpToConversation={(convId) => {
-              setSelectedConversationId(convId);
-              setSelectedConceptId(null);
-              setActiveSurface("chat");
-            }}
+            onJumpToConversation={(convId) => handleJumpToMessage(convId)}
             onStartGroundedChat={(conceptName) => {
-              setMessageInput(
-                `Help me connect my notes on ${conceptName} and test my understanding.`,
-              );
+              setComposerText(`Tell me more about ${conceptName}`);
               setSelectedConceptId(null);
               setActiveSurface("chat");
             }}
-            onAcceptSuggestion={(sid) => acceptSuggestionMutation.mutate(sid)}
-            onRejectSuggestion={(sid) => rejectSuggestionMutation.mutate(sid)}
-            onDismissSuggestion={(sid) => dismissSuggestionMutation.mutate(sid)}
-            onWithdrawRelation={(rid) => withdrawRelationMutation.mutate(rid)}
-            onReviewSignal={(conceptId, evidenceId, action) =>
-              reviewSignalMutation.mutate({ conceptId, evidenceId, action })
-            }
+            onAcceptSuggestion={(id) => {
+              void apiClient.acceptSuggestion(id).then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["graph"] });
+                void queryClient.invalidateQueries({
+                  queryKey: ["concept-evidence"],
+                });
+              });
+            }}
+            onRejectSuggestion={(id) => {
+              void apiClient.rejectSuggestion(id).then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["graph"] });
+                void queryClient.invalidateQueries({
+                  queryKey: ["concept-evidence"],
+                });
+              });
+            }}
+            onDismissSuggestion={(id) => {
+              void apiClient.dismissSuggestion(id).then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["graph"] });
+                void queryClient.invalidateQueries({
+                  queryKey: ["concept-evidence"],
+                });
+              });
+            }}
+            onWithdrawRelation={(id) => {
+              void apiClient.withdrawRelation(id).then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["graph"] });
+                void queryClient.invalidateQueries({
+                  queryKey: ["concept-evidence"],
+                });
+              });
+            }}
             onCreateRelation={(sourceId, targetId, predicate, explanation) =>
               createRelationMutation.mutate({
-                sourceId,
-                targetId,
+                conceptId: sourceId,
+                targetConceptId: targetId,
                 predicate,
                 explanation,
               })
             }
-            onMergeConcept={(sourceId, targetId) =>
-              mergeConceptMutation.mutate({ sourceId, targetId })
+            onReviewSignal={(conceptId, evidenceId, decision) =>
+              reviewSignalMutation.mutate({ conceptId, evidenceId, decision })
             }
+            onMergeConcept={(sourceId, targetId) => {
+              void apiClient.mergeConcept(sourceId, targetId).then(() => {
+                setSelectedConceptId(targetId);
+                void queryClient.invalidateQueries({ queryKey: ["graph"] });
+                void queryClient.invalidateQueries({ queryKey: ["concept"] });
+              });
+            }}
           />
-        )}
-      </main>
+        </div>
+      )}
+
+      {/* Floating Frosted-Glass Question Box at the bottom (with #tag autocomplete popup) */}
+      <FloatingComposer
+        value={composerText}
+        onChange={setComposerText}
+        onSubmit={handleSendQuestion}
+        isSending={sendTurnMutation.isPending}
+        activeSurface={activeSurface}
+        sidebarOpen={sidebarOpen}
+      />
+
+      {/* Settings & API Key Frosted Modal */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-3xl bg-zinc-950 border border-white/15 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <SettingsAndOwnershipView
+              settings={settingsQuery.data}
+              onUpdateSettings={async (payload: UpdateAISettingsPayload) => {
+                await apiClient.updateAISettings(payload);
+                await queryClient.invalidateQueries({
+                  queryKey: ["ai-settings"],
+                });
+              }}
+              onValidateProvider={(provider, localUrl, apiKey) =>
+                apiClient.validateAISettings(provider, localUrl, apiKey)
+              }
+              onExportWorkspace={() => apiClient.exportWorkspace()}
+              onReturnToChat={() => setSettingsOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* History & Export Frosted Modal */}
+      {timelineOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-3xl bg-zinc-950 border border-white/15 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <TimelineView
+              events={eventsQuery.data ?? []}
+              onReturnToChat={() => setTimelineOpen(false)}
+              onSelectConcept={(conceptId) => {
+                setTimelineOpen(false);
+                setSelectedConceptId(conceptId);
+              }}
+              onJumpToConversation={(convId) => {
+                setTimelineOpen(false);
+                setActiveConversationId(convId);
+                setActiveSurface("chat");
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default App;

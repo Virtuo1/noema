@@ -11,6 +11,7 @@ import type {
   GraphProjectionResponse,
   KnowledgeEventDTO,
   MessageDTO,
+  RelatedConversationDTO,
   SearchResultDTO,
   SpanDTO,
   SuggestionDTO,
@@ -66,6 +67,15 @@ export const apiClient = {
     requestJson<void>(`/conversations/${conversationId}`, {
       method: "DELETE",
     }),
+
+  listRelatedConversations: async (
+    conversationId: string,
+  ): Promise<RelatedConversationDTO[]> => {
+    const res = await requestJson<{ items: RelatedConversationDTO[] }>(
+      `/conversations/${conversationId}/related`,
+    );
+    return res.items;
+  },
 
   listMessages: async (conversationId: string): Promise<MessageDTO[]> => {
     const res = await requestJson<{ items: MessageDTO[] }>(
