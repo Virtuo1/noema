@@ -467,7 +467,7 @@ export const App: React.FC = () => {
         </main>
       )}
 
-      {/* Centered Topic Context Card aligned directly above the bottom Question Box (with darkening + blur backdrop over background) */}
+      {/* Centered Topic Context Card extending upward between top toggle and bottom Question Box */}
       {selectedConceptId && (
         <>
           <div
@@ -477,11 +477,11 @@ export const App: React.FC = () => {
             className="fixed inset-0 z-20 bg-black/65 backdrop-blur-md transition-all duration-300 animate-fade-in"
           />
           <div
-            className={`fixed bottom-24 right-6 z-30 transition-all duration-300 ease-out pointer-events-none flex justify-center ${
+            className={`fixed top-20 bottom-24 right-6 z-30 transition-all duration-300 ease-out pointer-events-none flex justify-center ${
               sidebarOpen ? "left-6 md:left-[20rem]" : "left-6"
             }`}
           >
-            <div className="w-full max-w-2xl pointer-events-auto">
+            <div className="w-full max-w-2xl h-full pointer-events-auto">
               <ConceptInspector
                 concept={conceptDetailQuery.data}
                 evidence={conceptEvidenceQuery.data}

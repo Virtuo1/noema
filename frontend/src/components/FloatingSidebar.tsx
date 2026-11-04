@@ -53,30 +53,36 @@ export const FloatingSidebar: React.FC<FloatingSidebarProps> = ({
         {isOpen ? "✕" : "☰"}
       </button>
 
-      {/* Always-Visible Top-Middle Graph / Chat Pill Toggle */}
-      <div className="fixed top-5 left-1/2 -translate-x-1/2 z-30 rounded-2xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] p-1 flex items-center gap-1 shadow-[0_8px_30px_rgba(0,0,0,0.8)]">
-        <button
-          type="button"
-          onClick={() => onSwitchSurface("graph")}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 ${
-            activeSurface === "graph"
-              ? "bg-white text-black shadow-sm"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          ◉ Graph ({graphNodeCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => onSwitchSurface("chat")}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 ${
-            activeSurface === "chat"
-              ? "bg-white text-black shadow-sm"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          💬 Chat
-        </button>
+      {/* Always-Visible Top Graph / Chat Pill Toggle (centered between sidebar and right edge, matching question box) */}
+      <div
+        className={`fixed top-5 right-6 z-30 transition-all duration-300 ease-out pointer-events-none flex justify-center ${
+          isOpen ? "left-6 md:left-[20rem]" : "left-6"
+        }`}
+      >
+        <div className="pointer-events-auto rounded-2xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] p-1 flex items-center gap-1 shadow-[0_8px_30px_rgba(0,0,0,0.8)]">
+          <button
+            type="button"
+            onClick={() => onSwitchSurface("graph")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 ${
+              activeSurface === "graph"
+                ? "bg-white text-black shadow-sm"
+                : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            ◉ Graph ({graphNodeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => onSwitchSurface("chat")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 ${
+              activeSurface === "chat"
+                ? "bg-white text-black shadow-sm"
+                : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            💬 Chat
+          </button>
+        </div>
       </div>
 
       {/* Hovering Frosted-Glass Sidebar with Smooth Transform + Opacity Transition */}
