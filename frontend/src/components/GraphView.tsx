@@ -100,6 +100,7 @@ interface GraphViewProps {
   graph: GraphProjectionResponse | undefined;
   isLoading: boolean;
   selectedConceptId: string | null;
+  sidebarOpen?: boolean;
   showAllCategorizedTopics: boolean;
   onShowAllCategorizedTopicsChange: (showAll: boolean) => void;
   onSelectConcept: (conceptId: string) => void;
@@ -110,6 +111,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   graph,
   isLoading,
   selectedConceptId,
+  sidebarOpen = false,
   showAllCategorizedTopics,
   onShowAllCategorizedTopicsChange,
   onSelectConcept,
@@ -604,7 +606,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       {/* Empty State Overlay */}
       {!isLoading && nodes.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-6 text-center">
+        <div
+          className={`absolute inset-0 right-6 flex flex-col items-center justify-center pointer-events-none px-6 text-center transition-all duration-300 ease-out ${
+            sidebarOpen ? "left-6 md:left-[20rem]" : "left-6"
+          }`}
+        >
           <div className="max-w-md rounded-3xl bg-zinc-950/70 backdrop-blur-2xl border border-white/[0.06] p-8 shadow-2xl">
             <div className="w-2.5 h-2.5 rounded-full bg-white mx-auto mb-4 shadow-[0_0_20px_rgba(255,255,255,0.9)]" />
             <h2 className="text-lg font-medium text-white tracking-tight">

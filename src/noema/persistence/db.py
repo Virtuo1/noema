@@ -144,4 +144,6 @@ def init_db(database_url: str | None = None) -> Engine:
     alembic_config = Config(str(repository_root / "alembic.ini"))
     alembic_config.attributes["database_url"] = resolved_url
     command.upgrade(alembic_config, "head")
-    return get_engine(resolved_url)
+    engine = get_engine(resolved_url)
+    ensure_fts_and_local_owner(engine)
+    return engine

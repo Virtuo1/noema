@@ -370,6 +370,7 @@ export const App: React.FC = () => {
           graph={graphQuery.data}
           isLoading={graphQuery.isLoading}
           selectedConceptId={selectedConceptId}
+          sidebarOpen={sidebarOpen}
           showAllCategorizedTopics={showAllCategorizedTopics}
           onShowAllCategorizedTopicsChange={(showAll) => {
             setShowAllCategorizedTopics(showAll);

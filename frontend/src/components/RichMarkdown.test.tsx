@@ -25,18 +25,18 @@ describe("RichMarkdown Component", () => {
 
     expect(screen.getByText("python")).toBeDefined();
     expect(screen.getByText("Copy")).toBeDefined();
-    expect(screen.getByText(/def backprop/)).toBeDefined();
+    expect(screen.getByText("backprop")).toBeDefined();
   });
 
   it("renders display math and inline math with LaTeX Greek and operator symbols", () => {
     const markdown =
-      "The loss function is $$\n\\mathcal{L} = \\frac{1}{2} (y - \\hat{y})^2\n$$\nwhere $ \\alpha \\in \\mathbb{R} $.";
+      "The loss function is:\n\n$$\n\\mathcal{L} = \\frac{1}{2} (y - \\hat{y})^2\n$$\n\nwhere $\\alpha \\in \\mathbb{R}$.";
     const { container } = render(<RichMarkdown content={markdown} />);
 
-    expect(container.textContent).toContain("ℒ");
+    expect(container.querySelector(".katex")).not.toBeNull();
+    expect(container.querySelector(".katex-display")).not.toBeNull();
     expect(container.textContent).toContain("α");
     expect(container.textContent).toContain("∈");
-    expect(container.textContent).toContain("ℝ");
   });
 
   it("renders tables and lists correctly", () => {

@@ -82,7 +82,7 @@ def test_phase1_worked_example_and_acceptance_criteria(tmp_path: Path) -> None:
     client.post("/api/v1/worker/drain")
 
     # 3. Inspect graph: Backpropagation, Chain rule, and Hebbian learning should exist
-    graph_res = client.get("/api/v1/knowledge/graph?layers=user,world,suggested")
+    graph_res = client.get("/api/v1/knowledge/graph?layers=user,world,suggested&include_unsaved=true")
     assert graph_res.status_code == 200
     graph = graph_res.json()
     nodes_by_label = {n["label"]: n for n in graph["nodes"]}
@@ -122,7 +122,7 @@ def test_phase1_worked_example_and_acceptance_criteria(tmp_path: Path) -> None:
     assert rel_data["source_suggestion_id"] == suggestion_id
 
     # Verify graph after acceptance: now has user_established edge, and Hebbian learning is STILL not marked understood!
-    graph_after = client.get("/api/v1/knowledge/graph?layers=user,world,suggested").json()
+    graph_after = client.get("/api/v1/knowledge/graph?layers=user,world,suggested&include_unsaved=true").json()
     user_edges_after = [
         e for e in graph_after["edges"] if e["layer"] == "user_established"
     ]
@@ -133,7 +133,7 @@ def test_phase1_worked_example_and_acceptance_criteria(tmp_path: Path) -> None:
 
     # Verify historical `as_of` graph before acceptance still shows suggestion pending and 0 user edges!
     hist_graph = client.get(
-        f"/api/v1/knowledge/graph?layers=user,world,suggested&as_of={before_accept_ts}"
+        f"/api/v1/knowledge/graph?layers=user,world,suggested&include_unsaved=true&as_of={before_accept_ts}"
     ).json()
     assert len([e for e in hist_graph["edges"] if e["layer"] == "user_established"]) == 0
     assert len([e for e in hist_graph["edges"] if e["layer"] == "suggested"]) >= 1
