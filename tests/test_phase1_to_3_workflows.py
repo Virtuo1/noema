@@ -323,6 +323,37 @@ def test_phase3_export_delete_and_privacy_settings(tmp_path: Path) -> None:
     assert val_res.status_code == 200
     assert val_res.json()["valid"] is True
 
+    # Connect API key and configure big chat model + small background organizer model via UI endpoint
+    key_res = client.put(
+        "/api/v1/settings/ai",
+        json={
+            "conversation_provider": "openai",
+            "conversation_model": "gpt-4o",
+            "extraction_provider": "openai",
+            "extraction_model": "gpt-4o-mini",
+            "hosted_data_consent": True,
+            "api_keys": {"openai": "sk-test-secret-key-9876"},
+        },
+    )
+    assert key_res.status_code == 200
+    key_json_text = key_res.text
+    assert "sk-test-secret-key-9876" not in key_json_text
+    openai_cap = next(
+        p for p in key_res.json()["providers"] if p["provider"] == "openai"
+    )
+    assert openai_cap["has_configured_secret"] is True
+    assert openai_cap["masked_secret_hint"] == "sk-••••9876"
+
+    # Reset back to local_heuristic for local turn execution below
+    client.put(
+        "/api/v1/settings/ai",
+        json={
+            "conversation_provider": "local_heuristic",
+            "extraction_provider": "local_heuristic",
+            "hosted_data_consent": False,
+        },
+    )
+
     # Create conversation, turn, export, then delete conversation and verify cleanup
     conv_id = client.post(
         "/api/v1/conversations", json={"title": "Export and delete test"}

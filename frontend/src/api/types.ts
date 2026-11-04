@@ -58,12 +58,14 @@ export interface AnnotationDTO {
 export interface ConceptMentionBriefDTO {
   id: string;
   concept_id: string;
-  canonical_name: string;
+  canonical_name: str;
   surface_text: string;
   start_offset: number | null;
   end_offset: number | null;
   resolution: string;
 }
+
+type str = string;
 
 export interface MessageDTO {
   id: string;
@@ -310,6 +312,9 @@ export interface ProviderCapabilityDTO {
   supports_embeddings: boolean;
   context_window: number;
   has_configured_secret: boolean;
+  masked_secret_hint?: string | null;
+  recommended_chat_models: string[];
+  recommended_small_models: string[];
 }
 
 export interface AISettingsDTO {
@@ -324,6 +329,10 @@ export interface AISettingsDTO {
   context_budget_tokens: number;
   remote_transfer_active: boolean;
   providers: ProviderCapabilityDTO[];
+}
+
+export interface UpdateAISettingsPayload extends Partial<AISettingsDTO> {
+  api_keys?: Record<string, string>;
 }
 
 export interface ExportResultResponse {

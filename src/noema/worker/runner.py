@@ -100,6 +100,7 @@ def process_next_background_job(
     payload: dict[str, Any] = {}
     extraction_provider = "local_heuristic"
     extraction_model = "noema-local-extractor-v1"
+    local_endpoint_url = "http://127.0.0.1:11434/v1"
     user_msg_dict: dict[str, Any] | None = None
     asst_msg_dict: dict[str, Any] | None = None
     existing_concepts: dict[str, tuple[str, str]] = {}
@@ -138,6 +139,7 @@ def process_next_background_job(
         if ai_cfg is not None:
             extraction_provider = ai_cfg.extraction_provider
             extraction_model = ai_cfg.extraction_model
+            local_endpoint_url = ai_cfg.local_endpoint_url
 
         user_msg_id = payload.get("user_message_id")
         asst_msg_id = payload.get("assistant_message_id")
@@ -204,6 +206,7 @@ def process_next_background_job(
                 user_message=user_msg_dict,
                 assistant_message=asst_msg_dict,
                 existing_concepts=existing_concepts,
+                local_endpoint_url=local_endpoint_url,
             )
 
             # Short transaction 2: apply validated proposal and complete job

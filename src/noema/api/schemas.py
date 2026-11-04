@@ -449,6 +449,9 @@ class ProviderCapabilityDTO(BaseModel):
     supports_embeddings: bool
     context_window: int
     has_configured_secret: bool
+    masked_secret_hint: str | None = None
+    recommended_chat_models: list[str] = Field(default_factory=list)
+    recommended_small_models: list[str] = Field(default_factory=list)
 
 
 class AISettingsDTO(BaseModel):
@@ -475,12 +478,14 @@ class UpdateAISettingsRequest(BaseModel):
     hosted_data_consent: bool | None = None
     local_endpoint_url: str | None = None
     context_budget_tokens: int | None = Field(default=None, ge=256, le=32000)
+    api_keys: dict[str, str] | None = None
 
 
 class ValidateAISettingsRequest(BaseModel):
     provider: str
     model: str | None = None
     local_endpoint_url: str | None = None
+    api_key: str | None = None
 
 
 class ValidateAISettingsResponse(BaseModel):

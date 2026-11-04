@@ -81,6 +81,13 @@ def get_ai_settings_dto(
                 has_configured_secret=(
                     secret_store.has_secret(cap.provider) if cap.is_remote else True
                 ),
+                masked_secret_hint=(
+                    secret_store.get_masked_hint(cap.provider)
+                    if cap.is_remote
+                    else None
+                ),
+                recommended_chat_models=list(cap.recommended_chat_models),
+                recommended_small_models=list(cap.recommended_small_models),
             )
         )
 
@@ -133,6 +140,12 @@ def update_ai_settings_dto(
             )
         cfg.local_endpoint_url = req.local_endpoint_url
 
+    if req.api_keys:
+        secret_store = SecretStore()
+        for prov_name, key_val in req.api_keys.items():
+            if prov_name in PROVIDER_CAPABILITIES:
+                secret_store.set_secret(prov_name, key_val)
+
     if req.conversation_provider is not None:
         cfg.conversation_provider = req.conversation_provider
     if req.conversation_model is not None:
@@ -163,6 +176,7 @@ def validate_ai_settings_dto(
     valid, msg = check_provider_connectivity(
         provider=req.provider,
         local_endpoint_url=req.local_endpoint_url or "http://127.0.0.1:11434/v1",
+        api_key_override=req.api_key,
     )
     return ValidateAISettingsResponse(
         valid=valid,

@@ -28,7 +28,8 @@ This file is the durable project handoff for developers and coding agents. Keep 
   - **Phase 3 — Temporal and ownership quality:**
     - Historical graph projection (`GET /api/v1/knowledge/graph?as_of=...`) replaying `knowledge_events` deltas and relation/suggestion timestamps up to `as_of`.
     - Full open-format workspace JSON export (`POST /api/v1/export`) and cascading conversation deletion (`DELETE /api/v1/conversations/{id}`) that cleans up FTS5 rows, embeddings, mentions, annotations, and evidence.
-    - Provider configuration & privacy controls (`GET/PUT /api/v1/settings/ai`, `POST /api/v1/settings/ai/validate`) with remote transfer disclosure, local secret storage (`SecretStore` outside SQLite), and loopback SSRF validation.
+    - Provider configuration & privacy controls (`GET/PUT /api/v1/settings/ai`, `POST /api/v1/settings/ai/validate`) with in-UI API key entry saved to `SecretStore` (`~/.config/noema/secrets.json` `0600`, masked hint returned, never stored in SQLite), live LLM calls + two-model configuration (`conversation_model` big chat LLM + `extraction_model` small background organizer LLM), remote transfer disclosure, and loopback SSRF validation.
+    - Clean, low-cognitive-load UI (`frontend/src/`) with minimal sidebar, uncluttered chat stream, hover-only `#aha`/`#confused` reactions, slide-over concept drawer, toggleable Map/List knowledge graph, and human-readable timeline sentences.
     - Measured latency benchmark (`test_phase3_vector_and_graph_scale_benchmark`) confirming exact vector ranking + FTS5 hybrid search and bounded graph projection complete well under 250 ms.
 - **In progress:** none.
 - **Next action:** Phase 4 (hosted multi-device sync or Tauri desktop packaging) is deferred by design until requested by the user.

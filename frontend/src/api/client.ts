@@ -16,6 +16,7 @@ import type {
   SuggestionDTO,
   TurnAcceptedResponse,
   TurnStatusResponse,
+  UpdateAISettingsPayload,
   UserRelationDTO,
 } from "./types";
 
@@ -238,7 +239,7 @@ export const apiClient = {
     requestJson<AISettingsDTO>("/settings/ai"),
 
   updateAISettings: async (
-    payload: Partial<AISettingsDTO>,
+    payload: UpdateAISettingsPayload,
   ): Promise<AISettingsDTO> =>
     requestJson<AISettingsDTO>("/settings/ai", {
       method: "PUT",
@@ -248,6 +249,7 @@ export const apiClient = {
   validateAISettings: async (
     provider: string,
     localEndpointUrl?: string,
+    apiKey?: string,
   ): Promise<{ valid: boolean; message: string; is_remote: boolean }> =>
     requestJson<{ valid: boolean; message: string; is_remote: boolean }>(
       "/settings/ai/validate",
@@ -256,6 +258,7 @@ export const apiClient = {
         body: JSON.stringify({
           provider,
           local_endpoint_url: localEndpointUrl,
+          api_key: apiKey,
         }),
       },
     ),

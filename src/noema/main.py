@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,12 +17,36 @@ from fastapi.staticfiles import StaticFiles
 from noema.api.router import router as api_v1_router
 from noema.config import get_settings
 from noema.persistence.db import init_db
+from noema.worker.runner import drain_background_jobs
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    yield
+    settings = get_settings()
+    stop_event = threading.Event()
+    worker_thread: threading.Thread | None = None
+
+    if settings.enable_background_worker:
+
+        def _organizer_loop() -> None:
+            while not stop_event.wait(1.5):
+                try:
+                    drain_background_jobs(max_jobs=10)
+                except Exception:
+                    pass
+
+        worker_thread = threading.Thread(
+            target=_organizer_loop,
+            name="noema-background-organizer",
+            daemon=True,
+        )
+        worker_thread.start()
+
+    try:
+        yield
+    finally:
+        stop_event.set()
 
 
 def create_app() -> FastAPI:
