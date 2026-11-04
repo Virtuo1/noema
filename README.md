@@ -31,12 +31,13 @@ See [`docs/README.md`](docs/README.md) for the full specification and architectu
 uv run noema
 ```
 
-This initializes the local SQLite database (`./data/noema.db`), starts the FastAPI backend on `http://127.0.0.1:8000`, and launches the React + Vite UI on **`http://127.0.0.1:5173`** (or serves the built UI directly on `http://127.0.0.1:8000` with `uv run noema --api-only`). Press `Ctrl+C` to stop both cleanly.
+This applies any pending SQLite migrations to the local database (`./data/noema.db`), starts the FastAPI backend on `http://127.0.0.1:8000`, and launches the React + Vite UI on **`http://127.0.0.1:5173`** (or serves the built UI directly on `http://127.0.0.1:8000` with `uv run noema --api-only`). Press `Ctrl+C` to stop both cleanly.
 
 ### Manual Separate Commands (Optional)
 
 ```bash
 # Backend
+# Optional: migrations also run automatically when the backend starts.
 uv run alembic upgrade head
 uv run uvicorn noema.main:app --host 127.0.0.1 --port 8000 --reload
 

@@ -61,6 +61,12 @@ This file is the durable project handoff for developers and coding agents. Keep 
 - Alembic upgrade through `0002_saved_note_summary` on a fresh temporary SQLite database — passed.
 - Automated test suites were not run for this milestone.
 
+### Existing database migration recovery
+
+- The existing `data/noema.db` was upgraded from `0001_initial_schema` to `0002_saved_note_summary`; this resolves the missing `evidence.summary` column error.
+- Application startup now runs Alembic migrations through `head`, including for existing databases. The affected concept evidence endpoint returned HTTP 200 after migration.
+- Ruff and `git diff --check` passed; automated test suites were not run for this fix.
+
 ## Milestone log
 
 | Milestone | Status | Commit | Notes |

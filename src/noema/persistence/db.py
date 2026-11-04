@@ -135,10 +135,13 @@ def ensure_fts_and_local_owner(engine: Engine) -> None:
 
 
 def init_db(database_url: str | None = None) -> Engine:
-    """Create schema (for tests or bootstrap) and verify SQLite FTS5 & foreign keys."""
-    import noema.persistence.models  # noqa: F401
+    """Apply schema migrations and verify SQLite FTS5 & foreign keys."""
+    from alembic import command
+    from alembic.config import Config
 
-    engine = get_engine(database_url)
-    Base.metadata.create_all(engine)
-    ensure_fts_and_local_owner(engine)
-    return engine
+    resolved_url = database_url or get_settings().database_url
+    repository_root = Path(__file__).resolve().parents[3]
+    alembic_config = Config(str(repository_root / "alembic.ini"))
+    alembic_config.attributes["database_url"] = resolved_url
+    command.upgrade(alembic_config, "head")
+    return get_engine(resolved_url)
