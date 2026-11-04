@@ -12,6 +12,7 @@ This directory is the working product and technical specification for the LLM-na
 6. [Retrieval and AI pipeline](retrieval-and-ai.md) — indexing, hybrid retrieval, context construction, extraction, and failure handling.
 7. [API design](api.md) — implementation-independent initial HTTP API.
 8. [Decisions and roadmap](decisions-and-roadmap.md) — ADRs, trade-offs, phases, and validation gates.
+9. [Contributor and coding-agent guide](implementation-guide.md) — repository link, working rules, code conventions, privacy rules, and review checklist.
 
 ## Baseline assumptions
 
