@@ -140,6 +140,7 @@ class MessageListResponse(BaseModel):
 class CreateTurnRequest(BaseModel):
     content: str = Field(min_length=1)
     context_mode: Literal["personalized", "conversation_only"] = "personalized"
+    focus_concept_id: str | None = None
     client_message_id: str | None = None
 
 
@@ -202,6 +203,7 @@ class GraphNodeDTO(BaseModel):
 
 class RelatedConversationDTO(BaseModel):
     id: str
+    conversation_id: str = ""
     title: str
     updated_at: str
     shared_concepts: list[str] = Field(default_factory=list)

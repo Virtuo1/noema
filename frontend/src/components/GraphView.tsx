@@ -1,4 +1,9 @@
-/** Obsidian-style hierarchical & semantic-zoom knowledge graph with hover pop-out card. */
+/**
+ * Obsidian-style hierarchical & semantic-zoom knowledge graph.
+ * - Preserves camera pan/zoom across background polls and selections (never resets view unexpectedly).
+ * - Smooth wheel zooming and sticky hover card that stays open when moving the cursor onto it.
+ * - Clicking a node opens the centered Topic Context Card above the question box.
+ */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
@@ -8,6 +13,7 @@ import type {
   GraphNodeDTO,
   GraphProjectionResponse,
 } from "../api/types";
+import { getTagBadgeClasses } from "./FloatingComposer";
 
 export function formatSelfAssessmentLabel(signals: ConceptSignalsDTO): string {
   switch (signals.self_assessment) {
@@ -107,6 +113,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const savedViewportRef = useRef<{
+    zoom: number;
+    pan: { x: number; y: number };
+    filter: string | null;
+  } | null>(null);
+  const hoverHideTimerRef = useRef<number | null>(null);
+
+  const onSelectConceptRef = useRef(onSelectConcept);
+  onSelectConceptRef.current = onSelectConcept;
+
+  const nodesByIdRef = useRef<Map<string, GraphNodeDTO>>(new Map());
+
   const [hoveredPopup, setHoveredPopup] = useState<HoveredNodePopup | null>(
     null,
   );
@@ -118,16 +136,56 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
   const edges = useMemo(() => graph?.edges ?? [], [graph]);
 
+  // Keep latest node metadata in a ref so hover popups always show fresh quotes/tags without rebuilding Cytoscape
+  useEffect(() => {
+    nodesByIdRef.current = new Map(nodes.map((n) => [n.id, n]));
+  }, [nodes]);
+
   const categoryColorMap = useMemo(() => getCategoryColorMap(nodes), [nodes]);
   const categories = useMemo(
     () => Object.keys(categoryColorMap),
     [categoryColorMap],
   );
 
-  // Build hierarchical clustered positions so concepts in the same topic group cluster together
+  // Structural fingerprint: only rebuild graph elements when actual node/edge topology or category filter changes
+  const graphStructureKey = useMemo(() => {
+    const nKey = nodes
+      .map(
+        (n) =>
+          `${n.id}:${n.category ?? "General"}:${n.hierarchy_level ?? 2}:${n.mention_count ?? 1}`,
+      )
+      .sort()
+      .join("|");
+    const eKey = edges
+      .map((e) => `${e.id}:${e.source}->${e.target}`)
+      .sort()
+      .join("|");
+    return `${activeCategoryFilter ?? "ALL"}::${nKey}::${eKey}`;
+  }, [nodes, edges, activeCategoryFilter]);
+
+  const clearHoverTimer = () => {
+    if (hoverHideTimerRef.current !== null) {
+      window.clearTimeout(hoverHideTimerRef.current);
+      hoverHideTimerRef.current = null;
+    }
+  };
+
+  const scheduleHideHover = () => {
+    clearHoverTimer();
+    hoverHideTimerRef.current = window.setTimeout(() => {
+      setHoveredPopup(null);
+      const cy = cyRef.current;
+      if (cy) {
+        cy.batch(() => {
+          cy.elements().removeClass("dimmed hovered neighbor highlighted");
+        });
+      }
+    }, 220);
+  };
+
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !graph || nodes.length === 0) return;
+    if (!el || nodes.length === 0) return;
 
     let cy: cytoscape.Core | null = null;
     try {
@@ -188,7 +246,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
         });
       });
 
-      // Explicit edges between visible nodes + implicit category hub tethers so clusters stay cohesive
       const explicitEdges = edges.filter(
         (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target),
       );
@@ -250,18 +307,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
         ...syntheticClusterEdges,
       ];
 
+      const prevViewport = savedViewportRef.current;
+      const shouldRestoreViewport =
+        prevViewport !== null && prevViewport.filter === activeCategoryFilter;
+
       cy = cytoscape({
         container: el,
         elements,
-        minZoom: 0.35,
-        maxZoom: 3.0,
-        wheelSensitivity: 0.25,
+        minZoom: 0.25,
+        maxZoom: 3.5,
         style: [
           {
             selector: "node",
             style: {
               "background-color": "data(color)",
-              "background-opacity": 0.9,
+              "background-opacity": 0.92,
               width: "data(size)",
               height: "data(size)",
               "border-width": 1.5,
@@ -277,12 +337,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
               "text-margin-y": 6,
               "text-outline-width": 3,
               "text-outline-color": "#000000",
-              "transition-property":
-                "width, height, border-width, border-opacity, opacity",
-              "transition-duration": 140,
+              "transition-property": "border-width, border-opacity, opacity",
+              "transition-duration": 150,
             },
           },
-          // Semantic zoom label classes
           {
             selector: "node.show-label",
             style: {
@@ -322,7 +380,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {
             selector: "node.dimmed",
             style: {
-              opacity: 0.16,
+              opacity: 0.18,
               label: "",
             },
           },
@@ -330,7 +388,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: "node:selected",
             style: {
               label: "data(label)",
-              "border-width": 3,
+              "border-width": 3.5,
               "border-color": "#ffffff",
               "border-opacity": 1,
             },
@@ -342,7 +400,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               "line-color": "#52525b",
               opacity: 0.28,
               "curve-style": "bezier",
-              // Never render edge text labels (Obsidian style)
               label: "",
             },
           },
@@ -381,37 +438,50 @@ export const GraphView: React.FC<GraphViewProps> = ({
         ],
         layout: {
           name: "preset",
-          fit: true,
-          padding: 90,
+          fit: !shouldRestoreViewport,
+          padding: 95,
         },
       });
 
+      if (shouldRestoreViewport && prevViewport) {
+        cy.viewport({
+          zoom: prevViewport.zoom,
+          pan: prevViewport.pan,
+        });
+      }
+
       cyRef.current = cy;
 
-      // Apply semantic zoom visibility rules based on current zoom factor
+      const saveCurrentViewport = () => {
+        if (!cy) return;
+        savedViewportRef.current = {
+          zoom: cy.zoom(),
+          pan: { ...cy.pan() },
+          filter: activeCategoryFilter,
+        };
+      };
+
       const applySemanticZoom = () => {
         if (!cy) return;
         const z = cy.zoom();
         setZoomLevel(Number(z.toFixed(2)));
+        saveCurrentViewport();
         cy.batch(() => {
           cy!.nodes().forEach((n) => {
             const lvl = Number(n.data("hierarchyLevel") ?? 2);
             if (z < 0.85) {
-              // Zoomed out: simplify to major topic hubs only
               if (lvl === 1) {
                 n.addClass("show-label");
               } else {
                 n.removeClass("show-label");
               }
             } else if (z < 1.35) {
-              // Normal zoom: show hubs and core concepts, hide leaf labels
               if (lvl <= 2) {
                 n.addClass("show-label");
               } else {
                 n.removeClass("show-label");
               }
             } else {
-              // Zoomed in: reveal all detail labels
               n.addClass("show-label");
             }
           });
@@ -420,18 +490,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       applySemanticZoom();
       cy.on("zoom", applySemanticZoom);
+      cy.on("pan", saveCurrentViewport);
 
-      const nodeById = new Map(visibleNodes.map((n) => [n.id, n]));
-
-      // Hover pop-out + floating source card
+      // Sticky hover pop-out card that stays alive when moving cursor onto the popup
       cy.on("mouseover", "node", (evt) => {
         if (!cy) return;
+        clearHoverTimer();
         const targetNode = evt.target;
         const id = String(targetNode.id());
-        const dto = nodeById.get(id);
+        const dto = nodesByIdRef.current.get(id);
         const neighborhood = targetNode.closedNeighborhood();
 
         cy.batch(() => {
+          cy!.elements().removeClass("dimmed hovered neighbor highlighted");
           cy!.elements().addClass("dimmed");
           neighborhood.removeClass("dimmed");
           neighborhood.nodes().addClass("neighbor");
@@ -451,40 +522,41 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
 
       cy.on("mouseout", "node", () => {
-        if (!cy) return;
-        cy.batch(() => {
-          cy!.elements().removeClass("dimmed hovered neighbor highlighted");
-        });
-        setHoveredPopup(null);
+        scheduleHideHover();
       });
 
       cy.on("tap", "node", (evt) => {
+        clearHoverTimer();
+        setHoveredPopup(null);
         const id = String(evt.target.id());
-        onSelectConcept(id);
+        onSelectConceptRef.current(id);
       });
-
-      if (selectedConceptId) {
-        cy.$id(selectedConceptId).select();
-      }
     } catch {
       // Headless / jsdom fallback
     }
 
     return () => {
+      clearHoverTimer();
       if (cy) {
         cy.destroy();
         cyRef.current = null;
       }
     };
-  }, [
-    graph,
-    nodes,
-    edges,
-    categoryColorMap,
-    activeCategoryFilter,
-    selectedConceptId,
-    onSelectConcept,
-  ]);
+    // Only rebuild when actual node/edge structure or category filter changes!
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphStructureKey]);
+
+  // Update node selection highlight without rebuilding or resetting the graph camera
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      cy.nodes().unselect();
+      if (selectedConceptId) {
+        cy.$id(selectedConceptId).select();
+      }
+    });
+  }, [selectedConceptId]);
 
   const handleZoomBy = (factor: number) => {
     const cy = cyRef.current;
@@ -501,7 +573,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const handleResetZoom = () => {
     const cy = cyRef.current;
     if (!cy) return;
-    cy.fit(undefined, 90);
+    cy.fit(undefined, 95);
   };
 
   const semanticZoomDescription =
@@ -514,11 +586,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   return (
     <section
       aria-label="Knowledge graph surface"
-      className="relative w-screen h-screen bg-black overflow-hidden select-none"
+      className="relative w-screen h-screen bg-black overflow-hidden select-none animate-fade-in"
     >
       {/* Subtle radial dot background */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-25"
+        className="absolute inset-0 pointer-events-none opacity-20"
         style={{
           backgroundImage:
             "radial-gradient(circle at center, rgba(255,255,255,0.16) 1px, transparent 1px)",
@@ -536,15 +608,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
       {/* Empty State Overlay */}
       {!isLoading && nodes.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-6 text-center">
-          <div className="max-w-md rounded-3xl bg-black/60 backdrop-blur-xl border border-white/10 p-8 shadow-2xl">
-            <div className="w-3 h-3 rounded-full bg-white mx-auto mb-4 shadow-[0_0_20px_rgba(255,255,255,0.9)]" />
+          <div className="max-w-md rounded-3xl bg-zinc-950/70 backdrop-blur-2xl border border-white/[0.06] p-8 shadow-2xl">
+            <div className="w-2.5 h-2.5 rounded-full bg-white mx-auto mb-4 shadow-[0_0_20px_rgba(255,255,255,0.9)]" />
             <h2 className="text-lg font-medium text-white tracking-tight">
               Your knowledge graph is ready
             </h2>
             <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
               Ask a question in the box below to begin. As you chat and tag
-              moments with <span className="text-zinc-200 font-mono">#aha</span>{" "}
-              or <span className="text-zinc-200 font-mono">#important</span>,
+              moments with{" "}
+              <span className="text-emerald-300 font-mono">#aha</span> or{" "}
+              <span className="text-violet-300 font-mono">#important</span>,
               Noema automatically organizes and groups your topics here.
             </p>
           </div>
@@ -554,12 +627,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
       {/* Top-Right Floating Topic Group Filter & Semantic Zoom Controls */}
       {nodes.length > 0 && (
         <div className="fixed top-5 right-5 z-20 flex flex-col items-end gap-2 max-w-md">
-          {/* Topic Group Color Pills */}
-          <div className="flex flex-wrap justify-end gap-1.5 rounded-2xl bg-black/70 backdrop-blur-2xl border border-white/10 px-3 py-2 shadow-xl">
+          <div className="flex flex-wrap justify-end gap-1.5 rounded-2xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-3 py-2 shadow-xl">
             <button
               type="button"
               onClick={() => setActiveCategoryFilter(null)}
-              className={`text-[11px] px-2 py-0.5 rounded-lg transition-colors ${
+              className={`text-[11px] px-2.5 py-0.5 rounded-lg transition-colors ${
                 activeCategoryFilter === null
                   ? "bg-white text-black font-medium"
                   : "text-zinc-400 hover:text-white"
@@ -579,8 +651,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   }
                   className={`flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-lg transition-colors ${
                     isSelected
-                      ? "bg-white/20 text-white font-medium border border-white/30"
-                      : "text-zinc-300 hover:bg-white/10"
+                      ? "bg-white/15 text-white font-medium border border-white/20"
+                      : "text-zinc-300 hover:bg-white/[0.06]"
                   }`}
                 >
                   <span
@@ -593,15 +665,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
             })}
           </div>
 
-          {/* Semantic Zoom Indicator & Controls */}
-          <div className="flex items-center gap-1.5 rounded-xl bg-black/70 backdrop-blur-2xl border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 shadow-xl">
+          <div className="flex items-center gap-1.5 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-2.5 py-1 text-[11px] text-zinc-400 shadow-xl">
             <span>{semanticZoomDescription}</span>
-            <span className="text-zinc-600">·</span>
+            <span className="text-zinc-700">·</span>
             <button
               type="button"
               onClick={() => handleZoomBy(0.8)}
               title="Zoom out to broader topics"
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-zinc-300"
+              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
             >
               −
             </button>
@@ -609,7 +680,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               type="button"
               onClick={handleResetZoom}
               title="Reset view"
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-zinc-300"
+              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
             >
               Fit
             </button>
@@ -617,7 +688,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               type="button"
               onClick={() => handleZoomBy(1.25)}
               title="Zoom in for sub-topic details"
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-zinc-300"
+              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
             >
               +
             </button>
@@ -625,21 +696,23 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       )}
 
-      {/* Hover Pop-Out Card over the hovered node */}
+      {/* Interactive Sticky Hover Card (stays open when moving mouse onto it) */}
       {hoveredPopup && (
         <div
           data-testid="graph-hover-card"
+          onMouseEnter={clearHoverTimer}
+          onMouseLeave={scheduleHideHover}
           style={{
             left: Math.min(
-              Math.max(24, hoveredPopup.x + 18),
+              Math.max(24, hoveredPopup.x + 14),
               typeof window !== "undefined" ? window.innerWidth - 340 : 600,
             ),
             top: Math.min(
               Math.max(24, hoveredPopup.y - 24),
-              typeof window !== "undefined" ? window.innerHeight - 220 : 400,
+              typeof window !== "undefined" ? window.innerHeight - 230 : 400,
             ),
           }}
-          className="fixed z-40 w-80 pointer-events-none rounded-2xl bg-black/85 backdrop-blur-2xl border border-white/20 p-4 shadow-[0_20px_50px_rgba(0,0,0,0.9)] animate-in fade-in zoom-in-95 duration-100"
+          className="fixed z-40 w-80 pointer-events-auto rounded-2xl bg-zinc-950/90 backdrop-blur-2xl border border-white/[0.08] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.95)] animate-fade-in"
         >
           <div className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
@@ -664,7 +737,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
               {hoveredPopup.node.tags.map((t) => (
                 <span
                   key={t}
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/15"
+                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${getTagBadgeClasses(
+                    t,
+                  )}`}
                 >
                   #{t}
                 </span>
@@ -673,23 +748,35 @@ export const GraphView: React.FC<GraphViewProps> = ({
           )}
 
           {hoveredPopup.node.top_quote && (
-            <p className="mt-2 text-xs text-zinc-300 line-clamp-3 italic border-l-2 border-white/20 pl-2.5">
+            <p className="mt-2 text-xs text-zinc-300 line-clamp-3 italic border-l-2 border-white/15 pl-2.5">
               “{hoveredPopup.node.top_quote}”
             </p>
           )}
 
-          <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
-            <span className="truncate">
-              Saved in:{" "}
-              <strong className="text-zinc-200 font-medium">
-                {hoveredPopup.node.source_conversation_title ||
-                  "Knowledge base"}
-              </strong>
-            </span>
+          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                clearHoverTimer();
+                onSelectConcept(hoveredPopup.node.id);
+                setHoveredPopup(null);
+              }}
+              className="text-white hover:text-zinc-200 font-medium bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 rounded-lg transition-colors"
+            >
+              Open topic card
+            </button>
             {onOpenConversation && hoveredPopup.node.source_conversation_id && (
-              <span className="text-zinc-500 shrink-0 ml-2">
-                Click to inspect
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearHoverTimer();
+                  onOpenConversation(hoveredPopup.node.source_conversation_id!);
+                  setHoveredPopup(null);
+                }}
+                className="text-zinc-400 hover:text-white truncate transition-colors"
+              >
+                {hoveredPopup.node.source_conversation_title || "Source chat"} →
+              </button>
             )}
           </div>
         </div>

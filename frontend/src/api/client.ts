@@ -88,6 +88,7 @@ export const apiClient = {
     conversationId: string,
     content: string,
     contextMode: "personalized" | "conversation_only" = "personalized",
+    focusConceptId?: string | null,
   ): Promise<TurnAcceptedResponse> => {
     const idemKey = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     return requestJson<TurnAcceptedResponse>(
@@ -95,7 +96,11 @@ export const apiClient = {
       {
         method: "POST",
         headers: { "Idempotency-Key": idemKey },
-        body: JSON.stringify({ content, context_mode: contextMode }),
+        body: JSON.stringify({
+          content,
+          context_mode: contextMode,
+          focus_concept_id: focusConceptId ?? null,
+        }),
       },
     );
   },
@@ -108,6 +113,7 @@ export const apiClient = {
       onFailed?: (turnId: string, message: string) => void;
     },
     contextMode: "personalized" | "conversation_only" = "personalized",
+    focusConceptId?: string | null,
   ): Promise<void> => {
     const idemKey = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const response = await fetch(
@@ -118,7 +124,11 @@ export const apiClient = {
           "Content-Type": "application/json",
           "Idempotency-Key": idemKey,
         },
-        body: JSON.stringify({ content, context_mode: contextMode }),
+        body: JSON.stringify({
+          content,
+          context_mode: contextMode,
+          focus_concept_id: focusConceptId ?? null,
+        }),
       },
     );
 
@@ -128,6 +138,7 @@ export const apiClient = {
         conversationId,
         content,
         contextMode,
+        focusConceptId,
       );
       if (res.status === "failed") {
         callbacks.onFailed?.(

@@ -32,6 +32,7 @@ export interface ConversationDTO {
 }
 
 export interface RelatedConversationDTO {
+  id?: string;
   conversation_id: string;
   title: string;
   updated_at: string;

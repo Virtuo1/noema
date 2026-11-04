@@ -24,7 +24,7 @@ function renderWithQueryClient() {
 }
 
 describe("Noema Full-Screen Graph & Seamless Chat Workspace", () => {
-  it("renders the full-screen graph by default, shows #tag autocomplete when typing #, and transitions seamlessly to chat", () => {
+  it("renders the full-screen graph by default, shows colored #tag autocomplete, and supports Esc universal back button", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       status: 200,
@@ -33,13 +33,11 @@ describe("Noema Full-Screen Graph & Seamless Chat Workspace", () => {
         nodes: [],
         edges: [],
         counts: { nodes: 0, edges: 0, omitted_nodes: 0, omitted_edges: 0 },
-        provider: "google_gemini",
-        has_api_key: true,
-        api_key_Preview: "AIza...1234",
-        base_url: "",
-        chat_model: "gemini-3-flash-preview",
-        organizer_model: "gemini-3.5-flash-lite",
-        background_organization: true,
+        conversation_provider: "google_gemini",
+        conversation_model: "gemini-3-flash-preview",
+        extraction_provider: "google_gemini",
+        extraction_model: "gemini-3.5-flash-lite",
+        providers: [],
       }),
     } as Response);
 
@@ -64,11 +62,12 @@ describe("Noema Full-Screen Graph & Seamless Chat Workspace", () => {
     fireEvent.click(screen.getByText("#aha"));
     expect(input.value).toBe("Backpropagation #aha ");
 
-    // Seamlessly switch to Chat view and back to Graph view
+    // Seamlessly switch to Chat view via top-middle toggle
     fireEvent.click(screen.getByText("💬 Chat"));
     expect(screen.getByLabelText("Chat surface")).toBeDefined();
 
-    fireEvent.click(screen.getByText(/◉ Graph/));
+    // Pressing Esc acts as the universal back button and transitions back into Graph overview
+    fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByLabelText("Knowledge graph surface")).toBeDefined();
   });
 

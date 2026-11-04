@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from noema.ai.gateway import (
     PROMPT_VERSION_CHAT,
+    ContextEvidenceItem,
     ProviderError,
     complete_chat,
     stream_chat_tokens,
@@ -449,6 +450,10 @@ def execute_turn(
             if req.context_mode == "personalized"
             else []
         )
+        if req.focus_concept_id:
+            retrieved_context = _prepend_focus_concept_context(
+                session, req.focus_concept_id, retrieved_context
+            )
 
         prior_rows = session.scalars(
             select(MessageModel)
@@ -713,6 +718,10 @@ def stream_execute_turn(
             if req.context_mode == "personalized"
             else []
         )
+        if req.focus_concept_id:
+            retrieved_context = _prepend_focus_concept_context(
+                session, req.focus_concept_id, retrieved_context
+            )
 
         prior_rows = session.scalars(
             select(MessageModel)
@@ -1202,10 +1211,11 @@ def get_related_conversations(
     if query_text:
         search_res = hybrid_search(
             session,
-            q=query_text,
+            query=query_text,
             kind="message_chunk",
             limit=12,
             owner_user_id=owner_user_id,
+            exclude_conversation_id=conversation_id,
         )
         for hit in search_res.items:
             if not hit.conversation_id or hit.conversation_id == conversation_id:
@@ -1229,6 +1239,7 @@ def get_related_conversations(
         items.append(
             RelatedConversationDTO(
                 id=c_row.id,
+                conversation_id=c_row.id,
                 title=c_row.title,
                 updated_at=c_row.updated_at,
                 shared_concepts=shared_by_conv.get(cid, [])[:4],
@@ -1238,5 +1249,57 @@ def get_related_conversations(
         )
 
     return RelatedConversationListResponse(items=items)
+
+
+def _prepend_focus_concept_context(
+    session: Session,
+    focus_concept_id: str,
+    existing_context: list[ContextEvidenceItem],
+) -> list[ContextEvidenceItem]:
+    """Attach saved notes and mentions for the currently open topic card as background context."""
+    concept = session.get(ConceptModel, focus_concept_id)
+    if concept is None:
+        return existing_context
+
+    items: list[ContextEvidenceItem] = [
+        ContextEvidenceItem(
+            source_id=f"focus_concept_{concept.id}",
+            kind="concept",
+            message_id=None,
+            conversation_id=None,
+            concept_id=concept.id,
+            role="system",
+            excerpt=f"Open Topic Card ({concept.canonical_name}): {concept.description}",
+            created_at=concept.updated_at,
+            reason="Active topic card background context",
+        )
+    ]
+    mentions = session.scalars(
+        select(ConceptMentionModel)
+        .where(ConceptMentionModel.concept_id == concept.id)
+        .order_by(ConceptMentionModel.created_at.desc())
+        .limit(3)
+    ).all()
+    for m in mentions:
+        msg = session.get(MessageModel, m.message_id)
+        if msg is not None:
+            items.append(
+                ContextEvidenceItem(
+                    source_id=f"focus_mention_{m.id}",
+                    kind="message",
+                    message_id=msg.id,
+                    conversation_id=msg.conversation_id,
+                    concept_id=concept.id,
+                    role=msg.role,
+                    excerpt=msg.content[:240],
+                    created_at=msg.created_at,
+                    reason=f"Saved note on {concept.canonical_name}",
+                )
+            )
+    seen_ids = {item.source_id for item in items}
+    for ctx in existing_context:
+        if ctx.source_id not in seen_ids:
+            items.append(ctx)
+    return items
 
 

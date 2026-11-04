@@ -1,15 +1,16 @@
-/** Clean slide-over concept drawer showing personal status, connections, and source chat quotes. */
+/**
+ * Centered Topic Context Card aligned directly above the bottom question box.
+ * Shows saved notes, quotes, colored #tags, and connected topics while serving as
+ * silent background context for any question asked in the question box below.
+ */
 
-import React, { useState } from "react";
+import React from "react";
 import type {
   ConceptDetailDTO,
   ConceptEvidenceResponse,
   GraphNodeDTO,
 } from "../api/types";
-import {
-  formatDemonstrationLabel,
-  formatSelfAssessmentLabel,
-} from "./GraphView";
+import { getTagBadgeClasses } from "./FloatingComposer";
 
 interface ConceptInspectorProps {
   concept: ConceptDetailDTO | undefined;
@@ -17,23 +18,24 @@ interface ConceptInspectorProps {
   allConcepts: GraphNodeDTO[];
   onClose: () => void;
   onJumpToConversation: (conversationId: string) => void;
-  onStartGroundedChat: (conceptName: string) => void;
-  onAcceptSuggestion: (suggestionId: string) => void;
-  onRejectSuggestion: (suggestionId: string) => void;
-  onDismissSuggestion: (suggestionId: string) => void;
-  onWithdrawRelation: (relationId: string) => void;
-  onReviewSignal: (
+  onSelectRelatedConcept?: (conceptId: string) => void;
+  onStartGroundedChat?: (conceptName: string) => void;
+  onAcceptSuggestion?: (suggestionId: string) => void;
+  onRejectSuggestion?: (suggestionId: string) => void;
+  onDismissSuggestion?: (suggestionId: string) => void;
+  onWithdrawRelation?: (relationId: string) => void;
+  onReviewSignal?: (
     conceptId: string,
     evidenceId: string,
     action: "confirm" | "dismiss",
   ) => void;
-  onCreateRelation: (
+  onCreateRelation?: (
     sourceId: string,
     targetId: string,
     predicate: string,
     explanation: string,
   ) => void;
-  onMergeConcept: (sourceId: string, targetId: string) => void;
+  onMergeConcept?: (sourceId: string, targetId: string) => void;
 }
 
 export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
@@ -42,310 +44,215 @@ export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
   allConcepts,
   onClose,
   onJumpToConversation,
-  onStartGroundedChat,
-  onAcceptSuggestion,
-  onRejectSuggestion,
-  onDismissSuggestion,
-  onWithdrawRelation,
-  onReviewSignal,
-  onCreateRelation,
-  onMergeConcept,
+  onSelectRelatedConcept,
 }) => {
-  const [targetConceptId, setTargetConceptId] = useState("");
-  const [predicate, setPredicate] = useState("contrasts_with");
-  const [explanation, setExplanation] = useState("");
-  const [mergeTargetId, setMergeTargetId] = useState("");
+  const graphNode = allConcepts.find((n) => n.id === concept?.id);
+  const category = graphNode?.category || "General";
+  const cleanDescription = (concept?.description ?? "").replace(
+    /^\[[^\]]+\]\s*/,
+    "",
+  );
 
-  if (!concept) return null;
+  // Collect unique tags across annotations
+  const tags = Array.from(
+    new Set([
+      ...(graphNode?.tags ?? []),
+      ...(evidence?.annotations.map((a) => a.tag) ?? []),
+    ]),
+  );
 
-  const otherConcepts = allConcepts.filter((c) => c.id !== concept.id);
-  const pendingSuggestions =
-    evidence?.suggestions.filter((s) => s.status === "pending") ?? [];
-  const candidateSignals =
-    evidence?.state_signals.filter((s) => s.review_status === "candidate") ??
-    [];
+  // Collect connected topics from user relations and world claims
+  const connectedTopics = React.useMemo(() => {
+    if (!concept || !evidence) return [];
+    const seen = new Set<string>();
+    const list: { id: string; name: string; relation: string }[] = [];
+
+    for (const rel of evidence.user_relations) {
+      const otherId =
+        rel.subject_concept_id === concept.id
+          ? rel.object_concept_id
+          : rel.subject_concept_id;
+      const otherName =
+        rel.subject_concept_id === concept.id
+          ? rel.object_name
+          : rel.subject_name;
+      if (!seen.has(otherId)) {
+        seen.add(otherId);
+        list.push({
+          id: otherId,
+          name: otherName,
+          relation: rel.predicate_label,
+        });
+      }
+    }
+    for (const wc of evidence.world_claims) {
+      const otherId =
+        wc.subject_concept_id === concept.id
+          ? wc.object_concept_id
+          : wc.subject_concept_id;
+      const otherName =
+        wc.subject_concept_id === concept.id ? wc.object_name : wc.subject_name;
+      if (!seen.has(otherId)) {
+        seen.add(otherId);
+        list.push({
+          id: otherId,
+          name: otherName,
+          relation: wc.predicate_label,
+        });
+      }
+    }
+    return list;
+  }, [concept, evidence]);
+
+  if (!concept) {
+    return (
+      <div className="w-full max-w-2xl rounded-3xl bg-zinc-950/90 backdrop-blur-2xl border border-white/[0.08] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.95)] animate-fade-in">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-zinc-400 animate-pulse">
+            Loading topic notes...
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-zinc-500 hover:text-white px-2 py-1 rounded-lg"
+          >
+            Esc
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <aside
-      aria-label={`Concept Evidence: ${concept.canonical_name}`}
-      className="fixed inset-y-0 right-0 z-40 w-full max-w-md bg-zinc-950 border-l border-zinc-800 shadow-2xl flex flex-col"
+      aria-label="Topic context card"
+      className="w-full max-w-2xl max-h-[58vh] flex flex-col rounded-3xl bg-zinc-950/90 backdrop-blur-2xl border border-white/[0.08] shadow-[0_24px_80px_rgba(0,0,0,0.95)] overflow-hidden animate-fade-in"
     >
       {/* Header */}
-      <div className="px-5 py-4 border-b border-zinc-800/80 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-zinc-100">
+      <div className="px-6 pt-5 pb-4 border-b border-white/[0.06] flex items-start justify-between gap-4">
+        <div className="space-y-1.5 min-w-0">
+          <div className="flex items-center flex-wrap gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 border border-white/[0.06]">
+              {category}
+            </span>
+            {tags.map((t) => (
+              <span
+                key={t}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-md border ${getTagBadgeClasses(
+                  t,
+                )}`}
+              >
+                #{t}
+              </span>
+            ))}
+          </div>
+          <h2 className="text-lg font-semibold text-white tracking-tight truncate">
             {concept.canonical_name}
-          </h3>
-          {concept.description && (
-            <p className="text-xs text-zinc-400 mt-1">{concept.description}</p>
+          </h2>
+          {cleanDescription && (
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              {cleanDescription}
+            </p>
           )}
         </div>
+
         <button
           type="button"
           onClick={onClose}
-          className="px-2.5 py-1 rounded-md bg-zinc-900 hover:bg-zinc-800 text-xs text-zinc-300"
+          title="Close (Esc)"
+          className="shrink-0 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.06] px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white transition-colors"
         >
-          ✕
+          Esc ✕
         </button>
       </div>
 
-      {/* Scrollable Body */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs">
-        {/* Status & Quick Chat Action */}
-        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-3.5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-[11px] text-zinc-400">Your status</div>
-              <div className="text-zinc-100 font-medium mt-0.5">
-                {formatSelfAssessmentLabel(concept.signals)}
-              </div>
-              <div className="text-[11px] text-zinc-400 mt-0.5">
-                {formatDemonstrationLabel(concept.signals)}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onStartGroundedChat(concept.canonical_name)}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
-            >
-              Ask about this →
-            </button>
+      {/* Scrollable Saved Notes & Context */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+        {/* Saved Notes & Excerpts */}
+        <div>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Saved Notes & Excerpts ({evidence?.mentions.length ?? 0})
+            </h3>
           </div>
+
+          {!evidence || evidence.mentions.length === 0 ? (
+            <p className="text-xs text-zinc-500 py-2">
+              No saved excerpts yet. Ask a question below to explore{" "}
+              {concept.canonical_name}.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {evidence.mentions.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl bg-white/[0.03] border border-white/[0.05] p-3.5 space-y-2 hover:border-white/[0.1] transition-colors"
+                >
+                  <p className="text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                    “{item.quote}”
+                  </p>
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                    <div className="flex items-center gap-2">
+                      <span>
+                        {item.source_role === "user" ? "Your note" : "AI note"}
+                      </span>
+                      {item.annotation_tag && (
+                        <span
+                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${getTagBadgeClasses(
+                            item.annotation_tag,
+                          )}`}
+                        >
+                          #{item.annotation_tag}
+                        </span>
+                      )}
+                    </div>
+                    {item.conversation_id && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onJumpToConversation(item.conversation_id!)
+                        }
+                        className="text-zinc-300 hover:text-white font-medium transition-colors"
+                      >
+                        Open chat →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Pending AI Suggestions */}
-        {pendingSuggestions.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium text-amber-300">
-              Suggested Connections
-            </h4>
-            {pendingSuggestions.map((s) => (
-              <div
-                key={s.id}
-                className="p-3 rounded-lg border border-amber-800/60 bg-amber-950/20 space-y-2"
-              >
-                <div className="font-medium text-zinc-100">
-                  {s.subject_name}{" "}
-                  <span className="text-amber-300">
-                    → {s.predicate_label} →
-                  </span>{" "}
-                  {s.object_name}
-                </div>
-                <p className="text-zinc-300">{s.explanation}</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onAcceptSuggestion(s.id)}
-                    className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onRejectSuggestion(s.id)}
-                    className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-                  >
-                    Ignore
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDismissSuggestion(s.id)}
-                    className="px-2 py-1 text-zinc-400 hover:text-zinc-200"
-                  >
-                    Later
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Candidate Signals */}
-        {candidateSignals.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium text-purple-300">
-              Noticed in your messages
-            </h4>
-            {candidateSignals.map((sig) => (
-              <div
-                key={sig.evidence_id}
-                className="p-3 rounded-lg border border-purple-900/60 bg-purple-950/20 space-y-2"
-              >
-                <blockquote className="text-zinc-200 italic border-l-2 border-purple-600 pl-2">
-                  "{sig.quote}"
-                </blockquote>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onReviewSignal(concept.id, sig.evidence_id, "confirm")
-                    }
-                    className="px-2.5 py-1 rounded bg-purple-700 hover:bg-purple-600 text-white"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onReviewSignal(concept.id, sig.evidence_id, "dismiss")
-                    }
-                    className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-300"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Established Connections */}
-        {evidence && evidence.user_relations.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium text-zinc-300">Your Connections</h4>
-            {evidence.user_relations.map((rel) => (
-              <div
-                key={rel.id}
-                className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 flex items-center justify-between gap-2"
-              >
-                <span className="text-zinc-200">
-                  {rel.subject_name}{" "}
-                  <span className="text-emerald-400">
-                    → {rel.predicate_label} →
-                  </span>{" "}
-                  {rel.object_name}
-                </span>
+        {/* Connected Topics */}
+        {connectedTopics.length > 0 && (
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">
+              Connected Topics
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {connectedTopics.map((ct) => (
                 <button
+                  key={ct.id}
                   type="button"
-                  onClick={() => onWithdrawRelation(rel.id)}
-                  className="text-[11px] text-zinc-500 hover:text-rose-300"
+                  onClick={() => onSelectRelatedConcept?.(ct.id)}
+                  className="text-xs px-3 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-zinc-200 transition-colors"
                 >
-                  Remove
+                  {ct.name}
                 </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Sourced Quotes from Chats */}
-        {evidence && evidence.mentions.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium text-zinc-300">
-              From Your Conversations ({evidence.mentions.length})
-            </h4>
-            {evidence.mentions.map((m) => (
-              <div
-                key={m.id}
-                className="p-3 rounded-lg border border-zinc-800/80 bg-zinc-900/40 space-y-1.5"
-              >
-                <p className="text-zinc-200 line-clamp-3">"{m.quote}"</p>
-                {m.conversation_id && (
-                  <button
-                    type="button"
-                    onClick={() => onJumpToConversation(m.conversation_id!)}
-                    className="text-indigo-400 hover:underline text-[11px]"
-                  >
-                    Open chat →
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Collapsed Manual Link / Merge Tools */}
-        {otherConcepts.length > 0 && (
-          <details className="border-t border-zinc-800/80 pt-3">
-            <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200 font-medium">
-              Manual link or merge duplicate...
-            </summary>
-            <div className="pt-3 space-y-3">
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <select
-                    aria-label="Relation predicate"
-                    value={predicate}
-                    onChange={(e) => setPredicate(e.target.value)}
-                    className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200"
-                  >
-                    <option value="contrasts_with">contrasts with</option>
-                    <option value="depends_on">depends on</option>
-                    <option value="uses">uses</option>
-                    <option value="analogous_to">is analogous to</option>
-                    <option value="part_of">is part of</option>
-                    <option value="related_to">relates to</option>
-                  </select>
-                  <select
-                    aria-label="Target concept for relation"
-                    value={targetConceptId}
-                    onChange={(e) => setTargetConceptId(e.target.value)}
-                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200"
-                  >
-                    <option value="">Choose concept...</option>
-                    {otherConcepts.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Optional note..."
-                  value={explanation}
-                  onChange={(e) => setExplanation(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200"
-                />
-                <button
-                  type="button"
-                  disabled={!targetConceptId}
-                  onClick={() => {
-                    if (targetConceptId) {
-                      onCreateRelation(
-                        concept.id,
-                        targetConceptId,
-                        predicate,
-                        explanation,
-                      );
-                      setExplanation("");
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white"
-                >
-                  Save Connection
-                </button>
-              </div>
-
-              <div className="pt-2 border-t border-zinc-800/60 flex items-center gap-2">
-                <select
-                  aria-label="Merge duplicate into concept"
-                  value={mergeTargetId}
-                  onChange={(e) => setMergeTargetId(e.target.value)}
-                  className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200"
-                >
-                  <option value="">Merge duplicate into...</option>
-                  {otherConcepts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  disabled={!mergeTargetId}
-                  onClick={() => {
-                    if (mergeTargetId) {
-                      onMergeConcept(concept.id, mergeTargetId);
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200"
-                >
-                  Merge
-                </button>
-              </div>
+              ))}
             </div>
-          </details>
+          </div>
         )}
+      </div>
+
+      {/* Subtle Footer explaining background context behavior */}
+      <div className="px-6 py-2.5 border-t border-white/[0.05] bg-black/40 flex items-center justify-between text-[11px] text-zinc-500">
+        <span className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+          Used as silent background context when you ask below
+        </span>
+        <span>Press Esc to close</span>
       </div>
     </aside>
   );
