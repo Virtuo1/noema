@@ -13,6 +13,7 @@ This directory is the working product and technical specification for the LLM-na
 7. [API design](api.md) — implementation-independent initial HTTP API.
 8. [Decisions and roadmap](decisions-and-roadmap.md) — ADRs, trade-offs, phases, and validation gates.
 9. [Contributor and coding-agent guide](implementation-guide.md) — repository link, working rules, code conventions, privacy rules, and review checklist.
+10. [Implementation status](implementation-status.md) — durable milestone and resumption ledger for autonomous implementation work.
 
 ## Baseline assumptions
 

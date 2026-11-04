@@ -1,15 +1,14 @@
 # Contributor and coding-agent guide
 
-This guide is for developers and AI coding agents working in the Noema repository. It translates the product foundation into day-to-day implementation practices. If this guide conflicts with the product specification or an accepted ADR, update the guide or raise the inconsistency; do not silently change product semantics.
+This guide is for developers and AI coding agents working in the Noema repository. It translates the product foundation into day-to-day implementation practices. Antigravity and compatible agents load the root [`AGENTS.md`](../AGENTS.md) as persistent project guidance; this guide holds fuller implementation details. If this guide conflicts with the product specification or an accepted ADR, update the guide or raise the inconsistency; do not silently change product semantics. [Antigravity Rules documentation](https://antigravity.google/docs/rules/)
 
 ## Repository
 
 - **GitHub:** [Virtuo1/noema](https://github.com/Virtuo1/noema)
 - **Issues:** [GitHub Issues](https://github.com/Virtuo1/noema/issues)
-- **Current branch:** `main`
 - **Current state:** product/architecture documentation only; no application scaffold or established build commands are present yet.
 
-The user authorizes coding agents to read and modify repository files and expects completed work to be committed and pushed to GitHub. Do not ask for routine approval to edit project files or push a task branch. Use the assigned branch if provided; otherwise create a focused `codex/<short-task-name>` branch, commit the work, and push it to `origin`. Report the branch and commit. Do not force-push, rewrite shared history, change repository settings, merge into a protected/default branch, deploy, or use credentials for unrelated actions without explicit authorization. If access controls prevent a push, report that blocker accurately.
+The user authorizes coding agents to read and modify repository files and expects completed milestone work to be committed and pushed to `main`. Do not ask for routine approval to edit, commit, or push project work. Do not force-push or rewrite shared history. If an HTTPS push fails, try SSH authentication before concluding credentials are unavailable. If `main` is protected or no authorized push method works, keep work safely committed on a task branch and record the blocker in [`implementation-status.md`](implementation-status.md). Do not change repository settings or deploy without a separate request.
 
 ## Read these first
 
@@ -21,6 +20,14 @@ The user authorizes coding agents to read and modify repository files and expect
 6. [Roadmap and ADRs](decisions-and-roadmap.md)
 
 Use the ADRs as the record of accepted technical choices. The baseline assumes a local, single-user prototype. Where a decision is marked proposed or left open, choose the smallest reversible option for the current milestone and record material changes in an ADR.
+
+When the user asks to “implement the application,” treat the roadmap phases that deliver core product requirements as one continuing objective. Complete them incrementally; do not treat the prototype exit as completion. Future features and unresolved hosted/desktop deployment decisions remain deferred unless requested. Avoid stopping to ask about ordinary reversible choices: follow the documented defaults and record the choice.
+
+## Resumable implementation
+
+Keep [`implementation-status.md`](implementation-status.md) current as the durable handoff between sessions and agents. At session start, read it and inspect the actual Git state. After each coherent milestone, record what is done, what is in progress, the exact next action, open blockers/decisions, validation performed, and the commit on `main`. Before a potentially long or risky operation, record its active step. On resumption, reconcile the ledger with the repository, preserve partial work, and continue from the first incomplete acceptance criterion. Do not repeat completed work or rely on chat history as the project log.
+
+Before calling a milestone complete, run the relevant checks already configured in the project, validate its acceptance criteria, fix any failures, and record exact commands/results in the status ledger. Never report a check as passed unless it was run.
 
 ## Working principles
 
@@ -100,7 +107,7 @@ The repository does not have implementation tooling yet. When scaffolding the ap
 5. Report what changed and what was verified. Do not claim commands passed unless they were actually run; inspect the repository's current scripts rather than assuming commands exist.
 6. Keep documentation links and examples consistent with implementation changes.
 
-For GitHub changes, use a short-lived branch named for the work and keep each PR focused. A useful PR description states the user-visible behavior, relevant product requirement/ADR, data migration or privacy impact, and verification performed. No mandatory commit-message convention is set yet.
+Commit complete, reviewable milestones with clear messages and push them to `main` as authorized by the user. Keep each commit focused. A useful commit/PR description states the user-visible behavior, relevant product requirement/ADR, data migration or privacy impact, and verification performed. No mandatory commit-message convention is set yet.
 
 ## Product review checklist
 
