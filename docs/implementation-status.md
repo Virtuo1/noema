@@ -51,9 +51,9 @@ This file is the durable project handoff for developers and coding agents. Keep 
 | Product and architecture foundation | Complete | `ec2c616` | See documents linked from [`README.md`](README.md). |
 | Autonomous agent and resumption guidance | Complete | `679e0c7` | Root `AGENTS.md` is Antigravity-discoverable; `implementation-status.md` is the persistent handoff. |
 | Phase 0: project scaffold and contracts | Complete | `bfc409c` | Tooling locked (`uv.lock`, `package-lock.json`); SQLite + FTS5 migration, domain vocabulary, API schemas, and synthetic eval dataset verified. |
-| Phase 1: core interactive prototype | Complete | `main` (see latest commit) | Chat, typed/UI `#aha` annotation with undo, durable background extraction, evidence-linked Cytoscape/outline graph, suggestion accept/reject, and prior-context retrieval. |
-| Phase 2: retrieval and provenance quality | Complete | `main` (see latest commit) | Hybrid FTS5 + exact vector + graph RRF retrieval, source citations, concept merge, candidate signal review, and versioned user hypotheses. |
-| Phase 3: temporal and ownership quality | Complete | `main` (see latest commit) | Historical `as_of` graph replay, full JSON export, derived-index delete cleanup, provider privacy/SSRF validation, and scale benchmark. |
+| Phase 1: core interactive prototype | Complete | `995f521` | Chat, typed/UI `#aha` annotation with undo, durable background extraction, evidence-linked Cytoscape/outline graph, suggestion accept/reject, and prior-context retrieval. |
+| Phase 2: retrieval and provenance quality | Complete | `995f521` | Hybrid FTS5 + exact vector + graph RRF retrieval, source citations, concept merge, candidate signal review, and versioned user hypotheses. |
+| Phase 3: temporal and ownership quality | Complete | `995f521` | Historical `as_of` graph replay, full JSON export, derived-index delete cleanup, provider privacy/SSRF validation, and scale benchmark. |
 | Phase 4: deployment direction | Deferred | — | Revisit hosted sync or desktop packaging only when the user asks or validated product needs require it. |
 
 ## How to update this file
