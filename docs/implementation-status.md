@@ -61,23 +61,23 @@ This file is the durable project handoff for developers and coding agents. Keep 
 - Alembic upgrade through `0002_saved_note_summary` on a fresh temporary SQLite database — passed.
 - Automated test suites were not run for this milestone.
 
-### Streaming Markdown animation and lag elimination
+### Streaming Markdown animation and rendering refinement
 
-- Fixed lag during streaming Markdown generation by:
-  - Throttling SSE stream delta updates in `App.tsx` via `requestAnimationFrame`, avoiding dozens of redundant React state renders per second.
-  - Throttling DOM scrolling during streaming to `requestAnimationFrame` with instantaneous auto-follow (`behavior: "auto"`), eliminating layout thrashing caused by repeatedly canceled smooth-scroll animations.
-  - Direct static import of `RichMarkdown` instead of `React.lazy` to eliminate empty Suspense flash and render lag.
-  - Configured `rehypeHighlight` with `{ detect: false, ignoreMissing: true }` so regex language autodetectors do not run trial parses on partial streaming text blocks.
-- Implemented word-by-word mist/blur fade-in for streamed Markdown via `rehypeStreamFade`:
-  - Tokenizes streamed text nodes into `<span className="animate-token-fade">` elements using `@keyframes noemaTokenFade` (`opacity: 0, filter: blur(4px), translateY(2px)` to `opacity: 1, filter: blur(0px), translateY(0)`).
-  - Existing words preserve DOM identity across stream chunks, so only newly appended words animate without flickering or re-animating earlier text.
-  - Added gentle `animate-fade-in` to headings, code blocks, tables, lists, and blockquotes as they mount.
+- Fixed LaTeX fraction overlaps and radical collisions (`\frac{1}{\sqrt{...}}`) by:
+  - Setting `.katex { border-color: currentColor; line-height: normal; text-indent: 0; }`.
+  - Adding vertical clearances on `.katex .mfrac` (`padding: 0.18em 0.08em; margin: 0.12em 0;`) and `.katex .sqrt > span > span` (`padding-top: 0.14em;`).
+  - Configuring `rehypeKatex` with `minRuleThickness: 0.05` and `strict: false`.
+- Unified code block rendering:
+  - Overrode `.hljs` background to `transparent !important` so code blocks render as a single unified dark card (`bg-zinc-950/95`) without nested inner background rectangles.
+- Restored continuous, fluid word-by-word fade-in during LLM bursts:
+  - Added an adaptive token pacing queue (`tokenQueueRef` + `processRevealQueue`) that buffers bursty network packets from LLMs (e.g. Gemini 50-token bursts) and steadily releases words at a fluid ~20ms cadence.
+  - Waits for queued tokens to complete their blur-and-opacity fade-in before finalizing message state.
 - Verified test suites:
   - `npm --prefix frontend run lint` — passed.
-  - `npm --prefix frontend test` — passed (9 tests across 2 suites).
+  - `npm --prefix frontend test` — passed (10 tests across 2 suites).
   - `npm --prefix frontend run build` — passed.
   - `uv run ruff check .` — passed.
-  - `uv run pytest` — passed (8 passed in 21.84s).
+  - `uv run pytest` — passed (8 passed in 16.33s).
 
 ## Milestone log
 

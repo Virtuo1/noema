@@ -37,11 +37,33 @@ export const App: React.FC = () => {
   const [streamingUserText, setStreamingUserText] = useState<string | null>(
     null,
   );
-  const streamingTextRef = useRef<string>("");
-  const streamRafRef = useRef<number | null>(null);
+  const tokenQueueRef = useRef<string[]>([]);
+  const revealTimerRef = useRef<number | null>(null);
+  const streamFinishedRef = useRef<boolean>(false);
+  const resolveDrainRef = useRef<(() => void) | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const [searchFilter, setSearchFilter] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Adaptive token pacing loop: releases queued words in a natural fluid cadence (~20ms per token)
+  const processRevealQueue = useCallback(() => {
+    if (tokenQueueRef.current.length === 0) {
+      revealTimerRef.current = null;
+      if (streamFinishedRef.current && resolveDrainRef.current) {
+        resolveDrainRef.current();
+        resolveDrainRef.current = null;
+      }
+      return;
+    }
+
+    // Adaptive batching: consume 1 token normally, or 2-4 if queue has a burst backlog
+    const qLen = tokenQueueRef.current.length;
+    const count = qLen > 50 ? 4 : qLen > 25 ? 3 : qLen > 10 ? 2 : 1;
+    const chunk = tokenQueueRef.current.splice(0, count).join("");
+
+    setStreamingContent((prev) => (prev ?? "") + chunk);
+    revealTimerRef.current = window.setTimeout(processRevealQueue, 20);
+  }, []);
 
   // Graph is the default UI mode filling the viewport
   const [activeSurface, setActiveSurface] = useState<"graph" | "chat">("graph");
@@ -64,11 +86,16 @@ export const App: React.FC = () => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    if (streamRafRef.current !== null) {
-      cancelAnimationFrame(streamRafRef.current);
-      streamRafRef.current = null;
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
     }
-    streamingTextRef.current = "";
+    tokenQueueRef.current = [];
+    streamFinishedRef.current = false;
+    if (resolveDrainRef.current) {
+      resolveDrainRef.current();
+      resolveDrainRef.current = null;
+    }
     setStreamingUserText(null);
     setStreamingContent(null);
     if (activeConversationId) {
@@ -224,7 +251,8 @@ export const App: React.FC = () => {
       }
 
       setStreamingUserText(payload.content);
-      streamingTextRef.current = "";
+      tokenQueueRef.current = [];
+      streamFinishedRef.current = false;
       setStreamingContent("");
 
       const controller = new AbortController();
@@ -236,12 +264,10 @@ export const App: React.FC = () => {
           payload.content,
           {
             onDelta: (delta) => {
-              streamingTextRef.current += delta;
-              if (streamRafRef.current === null) {
-                streamRafRef.current = requestAnimationFrame(() => {
-                  streamRafRef.current = null;
-                  setStreamingContent(streamingTextRef.current);
-                });
+              const tokens = delta.match(/\S+\s*|\s+/g) ?? [delta];
+              tokenQueueRef.current.push(...tokens);
+              if (revealTimerRef.current === null) {
+                revealTimerRef.current = window.setTimeout(processRevealQueue, 12);
               }
             },
             onFailed: (turnId) => {
@@ -252,6 +278,17 @@ export const App: React.FC = () => {
           payload.focusConceptId,
           controller.signal,
         );
+
+        // Network transmission complete. Let remaining words in queue finish smooth reveal
+        streamFinishedRef.current = true;
+        if (tokenQueueRef.current.length > 0) {
+          await new Promise<void>((resolve) => {
+            resolveDrainRef.current = resolve;
+            window.setTimeout(resolve, 800);
+          });
+        }
+        // Brief pause for the final word's blur fade-in to complete before swap
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
       } catch (err: unknown) {
         if (controller.signal.aborted) {
           return;
@@ -261,20 +298,25 @@ export const App: React.FC = () => {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
         }
-        if (streamRafRef.current !== null) {
-          cancelAnimationFrame(streamRafRef.current);
-          streamRafRef.current = null;
+        if (revealTimerRef.current !== null) {
+          window.clearTimeout(revealTimerRef.current);
+          revealTimerRef.current = null;
         }
       }
 
       await queryClient.refetchQueries({ queryKey: ["messages", convId] });
     },
     onSettled: () => {
-      if (streamRafRef.current !== null) {
-        cancelAnimationFrame(streamRafRef.current);
-        streamRafRef.current = null;
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
       }
-      streamingTextRef.current = "";
+      tokenQueueRef.current = [];
+      streamFinishedRef.current = false;
+      if (resolveDrainRef.current) {
+        resolveDrainRef.current();
+        resolveDrainRef.current = null;
+      }
       setStreamingUserText(null);
       setStreamingContent(null);
       setComposerText("");

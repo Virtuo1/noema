@@ -59,6 +59,17 @@ describe("RichMarkdown Component", () => {
     expect(container.querySelector("sub")).toBeDefined();
   });
 
+  it("renders fractions with square roots in math notation cleanly", () => {
+    const markdown =
+      "Gaussian PDF is:\n\n$$\np(x) = \\frac{1}{\\sqrt{2\\pi\\sigma^2}} \\exp\\left(-\\frac{(x-\\mu)^2}{2\\sigma^2}\\right)\n$$";
+    const { container } = render(<RichMarkdown content={markdown} />);
+
+    expect(container.querySelector(".katex")).not.toBeNull();
+    expect(container.querySelector(".mfrac")).not.toBeNull();
+    expect(container.querySelector(".sqrt")).not.toBeNull();
+    expect(container.querySelector(".frac-line")).not.toBeNull();
+  });
+
   it("applies animate-token-fade spans to words when isStreaming is true", () => {
     const markdown = "Backpropagation computes gradients #aha";
     const { container } = render(

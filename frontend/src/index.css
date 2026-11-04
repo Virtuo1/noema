@@ -32,6 +32,46 @@
 
 .animate-token-fade {
   display: inline;
-  animation: noemaTokenFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: noemaTokenFade 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, filter, transform;
+}
+
+/* KaTeX math formatting & Tailwind preflight conflict resolution */
+.katex {
+  border-color: currentColor;
+  text-indent: 0;
+  line-height: normal;
+}
+
+.katex * {
+  border-color: currentColor;
+}
+
+/* Ensure fractions have clear vertical separation so square roots and fraction lines never intersect */
+.katex .mfrac {
+  padding: 0.18em 0.08em;
+}
+
+.katex .mfrac .frac-line {
+  border-bottom-width: 0.06em;
+  margin: 0.12em 0;
+}
+
+.katex .sqrt > span > span {
+  padding-top: 0.14em;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+  margin: 0.75em 0;
+}
+
+/* Unify code blocks: remove inner background from highlight.js so code block is a single clean card */
+.noema-markdown .hljs,
+.noema-markdown code.hljs,
+.noema-markdown pre code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
 }

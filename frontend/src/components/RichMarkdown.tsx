@@ -105,9 +105,16 @@ const rehypeStreamFade: Plugin<[], Root> = () => (tree) => {
   });
 };
 
-const rehypeMath: [typeof rehypeKatex, { throwOnError: boolean }] = [
+const rehypeMath: [
+  typeof rehypeKatex,
+  { throwOnError: boolean; strict: boolean; minRuleThickness: number },
+] = [
   rehypeKatex,
-  { throwOnError: false },
+  {
+    throwOnError: false,
+    strict: false,
+    minRuleThickness: 0.05,
+  },
 ];
 
 const rehypeHighlightConfig: [
@@ -151,8 +158,8 @@ const CodeBlock: React.FC<{
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-4 text-[13px] leading-relaxed">
-        <code className="hljs font-mono text-zinc-200">{children || code}</code>
+      <pre className="overflow-x-auto p-4 text-[13px] leading-relaxed bg-transparent">
+        <code className="hljs font-mono text-zinc-200 !bg-transparent">{children || code}</code>
       </pre>
     </div>
   );
