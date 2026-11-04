@@ -58,6 +58,7 @@ This file is the durable project handoff for developers and coding agents. Keep 
 | Phase 1: core interactive prototype | Complete | `995f521` | Chat, typed/UI `#aha` annotation with undo, durable background extraction, evidence-linked Cytoscape/outline graph, suggestion accept/reject, and prior-context retrieval. |
 | Phase 2: retrieval and provenance quality | Complete | `995f521` | Hybrid FTS5 + exact vector + graph RRF retrieval, source citations, concept merge, candidate signal review, and versioned user hypotheses. |
 | Phase 3: temporal and ownership quality | Complete | `995f521` | Historical `as_of` graph replay, full JSON export, derived-index delete cleanup, provider privacy/SSRF validation, and scale benchmark. |
+| Full-screen hierarchical graph, streaming, & workspace overhaul | Complete | `adc452f` | Obsidian-style semantic-zoom graph, full-height centered topic context card with darkening/blur backdrop, live related chats, colored `#tag` autocomplete, and native Gemini/Gemma 4 streaming. |
 | Phase 4: deployment direction | Deferred | — | Revisit hosted sync or desktop packaging only when the user asks or validated product needs require it. |
 
 ## How to update this file
