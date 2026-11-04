@@ -157,6 +157,7 @@ export const App: React.FC = () => {
     onSuccess: (conv) => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setActiveConversationId(conv.id);
+      setSelectedConceptId(null);
       setActiveSurface("chat");
     },
   });
@@ -466,24 +467,32 @@ export const App: React.FC = () => {
         </main>
       )}
 
-      {/* Centered Topic Context Card aligned directly above the bottom Question Box */}
+      {/* Centered Topic Context Card aligned directly above the bottom Question Box (with darkening + blur backdrop over background) */}
       {selectedConceptId && (
-        <div
-          className={`fixed bottom-24 right-6 z-30 transition-all duration-300 ease-out pointer-events-none flex justify-center ${
-            sidebarOpen ? "left-6 md:left-[20rem]" : "left-6"
-          }`}
-        >
-          <div className="w-full max-w-2xl pointer-events-auto">
-            <ConceptInspector
-              concept={conceptDetailQuery.data}
-              evidence={conceptEvidenceQuery.data}
-              allConcepts={graphQuery.data?.nodes ?? []}
-              onClose={() => setSelectedConceptId(null)}
-              onJumpToConversation={(convId) => handleJumpToMessage(convId)}
-              onSelectRelatedConcept={(cid) => setSelectedConceptId(cid)}
-            />
+        <>
+          <div
+            data-testid="topic-card-backdrop"
+            aria-hidden="true"
+            onClick={() => setSelectedConceptId(null)}
+            className="fixed inset-0 z-20 bg-black/65 backdrop-blur-md transition-all duration-300 animate-fade-in"
+          />
+          <div
+            className={`fixed bottom-24 right-6 z-30 transition-all duration-300 ease-out pointer-events-none flex justify-center ${
+              sidebarOpen ? "left-6 md:left-[20rem]" : "left-6"
+            }`}
+          >
+            <div className="w-full max-w-2xl pointer-events-auto">
+              <ConceptInspector
+                concept={conceptDetailQuery.data}
+                evidence={conceptEvidenceQuery.data}
+                allConcepts={graphQuery.data?.nodes ?? []}
+                onClose={() => setSelectedConceptId(null)}
+                onJumpToConversation={(convId) => handleJumpToMessage(convId)}
+                onSelectRelatedConcept={(cid) => setSelectedConceptId(cid)}
+              />
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Floating Frosted-Glass Question Box at the bottom (with #tag autocomplete & active topic pill) */}
@@ -533,6 +542,7 @@ export const App: React.FC = () => {
               }}
               onJumpToConversation={(convId) => {
                 setTimelineOpen(false);
+                setSelectedConceptId(null);
                 setActiveConversationId(convId);
                 setActiveSurface("chat");
               }}

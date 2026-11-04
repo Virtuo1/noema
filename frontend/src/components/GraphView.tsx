@@ -549,6 +549,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
   // Update node selection highlight without rebuilding or resetting the graph camera
   useEffect(() => {
     const cy = cyRef.current;
+    if (selectedConceptId) {
+      clearHoverTimer();
+      setHoveredPopup(null);
+    }
     if (!cy) return;
     cy.batch(() => {
       cy.nodes().unselect();
@@ -586,7 +590,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
   return (
     <section
       aria-label="Knowledge graph surface"
-      className="relative w-screen h-screen bg-black overflow-hidden select-none animate-fade-in"
+      aria-disabled={Boolean(selectedConceptId)}
+      className={`relative z-10 w-screen h-screen bg-black overflow-hidden select-none animate-fade-in transition-all duration-300 ${
+        selectedConceptId ? "pointer-events-none" : ""
+      }`}
     >
       {/* Subtle radial dot background */}
       <div
@@ -624,17 +631,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       )}
 
-      {/* Top-Right Floating Topic Group Filter & Semantic Zoom Controls */}
+      {/* Top-Right Compact Vertical Topic Legend & Semantic Zoom Controls */}
       {nodes.length > 0 && (
-        <div className="fixed top-5 right-5 z-20 flex flex-col items-end gap-2 max-w-md">
-          <div className="flex flex-wrap justify-end gap-1.5 rounded-2xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-3 py-2 shadow-xl">
+        <div className="fixed top-5 right-5 z-10 flex flex-col items-end gap-1.5">
+          <div className="w-40 flex flex-col items-stretch gap-0.5 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] p-1.5 shadow-xl max-h-64 overflow-y-auto">
             <button
               type="button"
+              disabled={Boolean(selectedConceptId)}
               onClick={() => setActiveCategoryFilter(null)}
-              className={`text-[11px] px-2.5 py-0.5 rounded-lg transition-colors ${
+              className={`text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
                 activeCategoryFilter === null
                   ? "bg-white text-black font-medium"
-                  : "text-zinc-400 hover:text-white"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               All topics
@@ -646,30 +654,32 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 <button
                   key={cat}
                   type="button"
+                  disabled={Boolean(selectedConceptId)}
                   onClick={() =>
                     setActiveCategoryFilter(isSelected ? null : cat)
                   }
-                  className={`flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-lg transition-colors ${
+                  className={`flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
                     isSelected
                       ? "bg-white/15 text-white font-medium border border-white/20"
                       : "text-zinc-300 hover:bg-white/[0.06]"
                   }`}
                 >
                   <span
-                    className="w-2 h-2 rounded-full shrink-0"
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="truncate max-w-[130px]">{cat}</span>
+                  <span className="truncate">{cat}</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-2.5 py-1 text-[11px] text-zinc-400 shadow-xl">
+          <div className="flex items-center gap-1 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-2 py-1 text-[10px] text-zinc-400 shadow-xl">
             <span>{semanticZoomDescription}</span>
             <span className="text-zinc-700">·</span>
             <button
               type="button"
+              disabled={Boolean(selectedConceptId)}
               onClick={() => handleZoomBy(0.8)}
               title="Zoom out to broader topics"
               className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
@@ -678,6 +688,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </button>
             <button
               type="button"
+              disabled={Boolean(selectedConceptId)}
               onClick={handleResetZoom}
               title="Reset view"
               className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
@@ -686,6 +697,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </button>
             <button
               type="button"
+              disabled={Boolean(selectedConceptId)}
               onClick={() => handleZoomBy(1.25)}
               title="Zoom in for sub-topic details"
               className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
