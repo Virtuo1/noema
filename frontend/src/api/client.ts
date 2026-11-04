@@ -265,6 +265,7 @@ export const apiClient = {
     focusConceptId?: string | null;
     layers?: string[];
     asOf?: string | null;
+    includeUnsaved?: boolean;
   }): Promise<GraphProjectionResponse> => {
     const search = new URLSearchParams();
     if (params.focusConceptId) {
@@ -275,6 +276,9 @@ export const apiClient = {
     }
     if (params.asOf) {
       search.set("as_of", params.asOf);
+    }
+    if (params.includeUnsaved) {
+      search.set("include_unsaved", "true");
     }
     const qs = search.toString() ? `?${search.toString()}` : "";
     return requestJson<GraphProjectionResponse>(`/knowledge/graph${qs}`);

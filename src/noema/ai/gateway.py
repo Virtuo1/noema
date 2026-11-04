@@ -26,6 +26,7 @@ from noema.domain.vocabulary import (
 
 PROMPT_VERSION_CHAT = "chat-v1.1"
 PROMPT_VERSION_EXTRACTION = "extract-v1.1"
+PROMPT_VERSION_SAVED_NOTE_SUMMARY = "saved-note-summary-v1"
 SCHEMA_VERSION_EXTRACTION = "schema-v1.0"
 EMBEDDING_DIMENSIONS_LOCAL = 64
 
@@ -1559,6 +1560,60 @@ def extract_structured(
         suggestions=suggestions,
         inferred_signals=inferred_signals,
     )
+
+
+def _fallback_saved_note_summary(content: str) -> str:
+    """Create a concise extractive summary when no organizer model is configured."""
+    text = re.sub(r"```[\s\S]*?```", " code example ", content)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"(?:^|\s)[#>*_`~-]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return "Saved note."
+
+    first_sentence = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+    words = first_sentence.split()
+    if len(words) > 32:
+        first_sentence = " ".join(words[:30]).rstrip(" ,;:") + "…"
+    return first_sentence
+
+
+def summarize_saved_note(
+    *,
+    provider: str,
+    model: str,
+    content: str,
+    local_endpoint_url: str = "http://127.0.0.1:11434/v1",
+) -> tuple[str, str, str]:
+    """Summarize a saved note without inferring the user's understanding."""
+    fallback = _fallback_saved_note_summary(content)
+    if provider == "local_heuristic":
+        return fallback, "local_heuristic", "noema-extractive-summary-v1"
+
+    try:
+        result = _call_external_llm(
+            provider=provider,
+            model=model,
+            system_prompt=(
+                "You summarize a note the user explicitly chose to save. Return one concise "
+                "sentence of at most 35 words describing its central idea. Preserve uncertainty "
+                "and do not claim that the user understands or agrees with it. Return only the sentence."
+            ),
+            messages=[{"role": "user", "content": content}],
+            local_endpoint_url=local_endpoint_url,
+            timeout=20.0,
+        )
+    except Exception:
+        return fallback, "local_heuristic", "noema-extractive-summary-v1"
+
+    summary = re.sub(r"\s+", " ", result).strip().strip("\"'` -*")
+    if not summary:
+        return fallback, "local_heuristic", "noema-extractive-summary-v1"
+    words = summary.split()
+    if len(words) > 40:
+        summary = " ".join(words[:38]).rstrip(" ,;:") + "…"
+    return summary, provider, model
 
 
 def check_provider_connectivity(

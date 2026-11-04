@@ -6,7 +6,14 @@
  * - Esc acts as universal back button (closes modals -> closes topic card -> returns from Chat to Graph)
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "./api/client";
 import type { UpdateAISettingsPayload } from "./api/types";
@@ -17,9 +24,14 @@ import {
 } from "./components/FloatingComposer";
 import { FloatingSidebar } from "./components/FloatingSidebar";
 import { GraphView } from "./components/GraphView";
-import { RichMarkdown } from "./components/RichMarkdown";
 import { SettingsAndOwnershipView } from "./components/SettingsAndOwnershipView";
 import { TimelineView } from "./components/TimelineView";
+
+const RichMarkdown = lazy(() =>
+  import("./components/RichMarkdown").then((module) => ({
+    default: module.RichMarkdown,
+  })),
+);
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -41,6 +53,8 @@ export const App: React.FC = () => {
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(
     null,
   );
+  const [showAllCategorizedTopics, setShowAllCategorizedTopics] =
+    useState<boolean>(false);
 
   // Overlays
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
@@ -139,12 +153,13 @@ export const App: React.FC = () => {
   });
 
   const graphQuery = useQuery({
-    queryKey: ["graph"],
+    queryKey: ["graph", showAllCategorizedTopics],
     queryFn: () =>
       apiClient.getGraph({
         focusConceptId: null,
         layers: ["user_established", "world", "suggested"],
         asOf: null,
+        includeUnsaved: showAllCategorizedTopics,
       }),
     refetchInterval: 5000,
   });
@@ -165,6 +180,10 @@ export const App: React.FC = () => {
         ? apiClient.getConceptEvidence(selectedConceptId)
         : Promise.resolve(undefined),
     enabled: Boolean(selectedConceptId),
+    refetchInterval: (query) => {
+      const notes = query.state.data?.saved_notes;
+      return !notes || notes.some((note) => !note.summary) ? 1500 : false;
+    },
   });
 
   const eventsQuery = useQuery({
@@ -246,6 +265,7 @@ export const App: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["related-conversations"] });
       queryClient.invalidateQueries({ queryKey: ["graph"] });
+      queryClient.invalidateQueries({ queryKey: ["concept-evidence"] });
     },
   });
 
@@ -350,6 +370,11 @@ export const App: React.FC = () => {
           graph={graphQuery.data}
           isLoading={graphQuery.isLoading}
           selectedConceptId={selectedConceptId}
+          showAllCategorizedTopics={showAllCategorizedTopics}
+          onShowAllCategorizedTopicsChange={(showAll) => {
+            setShowAllCategorizedTopics(showAll);
+            setSelectedConceptId(null);
+          }}
           onSelectConcept={handleSelectConcept}
           onOpenConversation={handleJumpToMessage}
         />
@@ -430,7 +455,9 @@ export const App: React.FC = () => {
                   ) : (
                     /* Assistant outputs directly onto the pure black background */
                     <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
-                      <RichMarkdown content={msg.content} />
+                      <Suspense fallback={null}>
+                        <RichMarkdown content={msg.content} />
+                      </Suspense>
 
                       {msg.annotations.length > 0 && (
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -478,10 +505,12 @@ export const App: React.FC = () => {
                 <article className="flex flex-col items-start animate-fade-in">
                   <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
                     {streamingContent ? (
-                      <RichMarkdown
-                        content={streamingContent}
-                        isStreaming={true}
-                      />
+                      <Suspense fallback={null}>
+                        <RichMarkdown
+                          content={streamingContent}
+                          isStreaming={true}
+                        />
+                      </Suspense>
                     ) : (
                       <span className="text-xs text-zinc-500 animate-pulse">
                         Thinking...

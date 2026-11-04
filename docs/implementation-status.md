@@ -4,8 +4,8 @@ This file is the durable project handoff for developers and coding agents. Keep 
 
 ## Current state
 
-- **Product stage:** Core product roadmap (Phases 0, 1, 2, and 3) implemented and verified.
-- **Current milestone:** Phase 3 complete; Phase 4 (hosted sync or desktop packaging) remains deferred per product specification until requested.
+- **Product stage:** Core product roadmap (Phases 0, 1, 2, and 3) implemented; saved-note graph and response-rendering refinements are complete.
+- **Current milestone:** Saved-only knowledge graph, asynchronous saved-note summaries, and established Markdown rendering complete. Phase 4 (hosted sync or desktop packaging) remains deferred per product specification until requested.
 - **Completed:**
   - **Foundation & Autonomous Guidance:** product specification, system architecture, relational/epistemic data model, knowledge model, graph projection design, retrieval & AI pipeline, API design, ADRs, and `AGENTS.md`.
   - **Phase 0 — Project scaffold and contracts (`bfc409c`):**
@@ -35,8 +35,11 @@ This file is the durable project handoff for developers and coding agents. Keep 
       - Seamless transition between Graph view and Chat view, live `Related Chats` in the sidebar (`GET /api/v1/conversations/{id}/related`), and inline `#` tag autocomplete popup (`#aha`, `#confused`, `#question`, `#important`, `#hypothesis`, `#connection`, `#revisit`).
       - Centered Topic Context Card with background darkening/blur: asking with an open topic card carries context into a brand new conversation without polluting previous chats.
       - In-flight prompt cancellation via `AbortController` (Stop button and Esc key support).
-      - Rich Markdown & LaTeX Math renderer (`RichMarkdown.tsx`) styling headings, fenced code blocks with language badge and copy button, LaTeX display and inline math with Greek/operator symbols, tables, lists, and per-token fade-in streaming.
+      - Established Markdown and LaTeX pipeline (`react-markdown`, GFM, KaTeX, and Highlight.js) for headings, code, math, tables, lists, and task lists. Streaming Markdown parsing is throttled to about 30 updates per second and the renderer is code-split from the graph view.
     - Measured latency benchmark (`test_phase3_vector_and_graph_scale_benchmark`) confirming exact vector ranking + FTS5 hybrid search and bounded graph projection complete well under 250 ms.
+- **Saved-only graph and note-summary refinement:**
+  - Default graph projection includes only concepts attached to a current explicit user annotation; categorized edges appear only when both endpoints are saved. The `include_unsaved` debug toggle restores the full categorizer projection. Synthetic layout edges were removed so displayed links always have stored provenance; user-established, AI-suggested, and world links use distinct line styles.
+  - Saved-note topic cards list only explicit saved evidence and show its concise organizer summary with a direct link back to the source chat. Summary text and provider/model/prompt/time provenance are persisted on evidence and generated through an idempotent background job. Added Alembic revision `0002_saved_note_summary`.
 - **In progress:** none.
 - **Next action:** Phase 4 (hosted multi-device sync or Tauri desktop packaging) is deferred by design until requested by the user.
 - **Blockers:** none recorded.
@@ -51,6 +54,13 @@ This file is the durable project handoff for developers and coding agents. Keep 
 - `npm --prefix frontend run test` — passed (`2 passed`)
 - `npm --prefix frontend run build` — passed (`tsc -b && vite build`)
 
+### Saved-note milestone checks
+
+- Python Ruff check on changed modules — passed.
+- Frontend lint, format check, and production build — passed. The Markdown renderer is loaded as a separate chunk when chat responses are opened.
+- Alembic upgrade through `0002_saved_note_summary` on a fresh temporary SQLite database — passed.
+- Automated test suites were not run for this milestone.
+
 ## Milestone log
 
 | Milestone | Status | Commit | Notes |
@@ -62,6 +72,7 @@ This file is the durable project handoff for developers and coding agents. Keep 
 | Phase 2: retrieval and provenance quality | Complete | `995f521` | Hybrid FTS5 + exact vector + graph RRF retrieval, source citations, concept merge, candidate signal review, and versioned user hypotheses. |
 | Phase 3: temporal and ownership quality | Complete | `995f521` | Historical `as_of` graph replay, full JSON export, derived-index delete cleanup, provider privacy/SSRF validation, and scale benchmark. |
 | Full-screen hierarchical graph, streaming, & workspace overhaul | Complete | `adc452f` | Obsidian-style semantic-zoom graph, full-height centered topic context card with darkening/blur backdrop, live related chats, colored `#tag` autocomplete, and native Gemini/Gemma 4 streaming. |
+| Saved-only graph, saved-note summaries, and Markdown rendering | Complete | pending | Explicit-save graph projection with categorized links and debug view, persisted asynchronous one-sentence summaries, and a lazy-loaded established Markdown pipeline. |
 | Phase 4: deployment direction | Deferred | — | Revisit hosted sync or desktop packaging only when the user asks or validated product needs require it. |
 
 ## How to update this file

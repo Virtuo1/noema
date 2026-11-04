@@ -45,6 +45,7 @@ export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
     if (!concept || !evidence) return [];
     const seen = new Set<string>();
     const list: { id: string; name: string }[] = [];
+    const visibleConceptIds = new Set(allConcepts.map((item) => item.id));
 
     for (const rel of evidence.user_relations) {
       const otherId =
@@ -55,7 +56,7 @@ export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
         rel.subject_concept_id === concept.id
           ? rel.object_name
           : rel.subject_name;
-      if (!seen.has(otherId)) {
+      if (visibleConceptIds.has(otherId) && !seen.has(otherId)) {
         seen.add(otherId);
         list.push({ id: otherId, name: otherName });
       }
@@ -67,13 +68,13 @@ export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
           : wc.subject_concept_id;
       const otherName =
         wc.subject_concept_id === concept.id ? wc.object_name : wc.subject_name;
-      if (!seen.has(otherId)) {
+      if (visibleConceptIds.has(otherId) && !seen.has(otherId)) {
         seen.add(otherId);
         list.push({ id: otherId, name: otherName });
       }
     }
     return list;
-  }, [concept, evidence]);
+  }, [allConcepts, concept, evidence]);
 
   if (!concept) {
     return (
@@ -127,20 +128,20 @@ export const ConceptInspector: React.FC<ConceptInspectorProps> = ({
 
       {/* Scrollable Notes & Context */}
       <div className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-        {!evidence || evidence.mentions.length === 0 ? (
+        {!evidence || evidence.saved_notes.length === 0 ? (
           <p className="text-sm text-zinc-500 py-8 text-center">
             No saved notes yet. Ask a question below to explore{" "}
             {concept.canonical_name}.
           </p>
         ) : (
           <div className="space-y-3.5">
-            {evidence.mentions.map((item) => (
+            {evidence.saved_notes.map((item) => (
               <div
                 key={item.id}
                 className="rounded-2xl bg-white/[0.03] border border-white/[0.05] p-4 space-y-2.5 hover:border-white/[0.1] transition-colors"
               >
-                <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
-                  {item.quote}
+                <p className="text-sm text-zinc-200 leading-relaxed">
+                  {item.summary || "Preparing a summary of this saved note…"}
                 </p>
                 {(item.annotation_tag || item.conversation_id) && (
                   <div className="flex items-center justify-between pt-1 text-xs">

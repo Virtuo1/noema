@@ -205,6 +205,11 @@ export interface EvidenceItemDTO {
   annotation_id: string | null;
   annotation_tag: string | null;
   quote: string;
+  summary: string | null;
+  summary_provider: string | null;
+  summary_model: string | null;
+  summary_prompt_version: string | null;
+  summary_generated_at: string | null;
   start_offset: number | null;
   end_offset: number | null;
   source_role: string;
@@ -283,6 +288,7 @@ export interface SuggestionDTO {
 export interface ConceptEvidenceResponse {
   concept_id: string;
   mentions: EvidenceItemDTO[];
+  saved_notes: EvidenceItemDTO[];
   annotations: AnnotationDTO[];
   state_signals: InferredAnnotationSignalDTO[];
   world_claims: WorldClaimDTO[];

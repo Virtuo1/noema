@@ -10,17 +10,21 @@ from sqlalchemy import or_, select
 
 from noema.ai.gateway import (
     PROMPT_VERSION_EXTRACTION,
+    PROMPT_VERSION_SAVED_NOTE_SUMMARY,
     SCHEMA_VERSION_EXTRACTION,
     ProviderError,
     extract_structured,
+    summarize_saved_note,
 )
 from noema.config import DEFAULT_OWNER_USER_ID
 from noema.knowledge.service import apply_extraction_proposal
 from noema.persistence.db import new_id, session_scope, utc_now_iso
 from noema.persistence.models import (
     AISettingsModel,
+    AnnotationModel,
     BackgroundJobModel,
     ConceptModel,
+    EvidenceModel,
     ExtractionRunModel,
     GenerationRunModel,
     MessageModel,
@@ -105,6 +109,7 @@ def process_next_background_job(
     asst_msg_dict: dict[str, Any] | None = None
     existing_concepts: dict[str, tuple[str, str]] = {}
     extraction_run_id: str | None = None
+    note_text: str | None = None
 
     # Short transaction 1: claim lease and load immutable inputs
     with session_scope(database_url) as session:
@@ -162,7 +167,23 @@ def process_next_background_job(
                     "content": am.content,
                 }
 
-        if job_kind == "knowledge_extraction":
+        if payload.get("operation") == "saved_note_summary":
+            evidence_id = payload.get("evidence_id")
+            evidence = session.get(EvidenceModel, evidence_id) if evidence_id else None
+            annotation = (
+                session.get(AnnotationModel, evidence.annotation_id)
+                if evidence is not None and evidence.annotation_id
+                else None
+            )
+            if evidence is not None and annotation is not None and annotation.removed_at is None:
+                message = session.get(MessageModel, evidence.message_id)
+                if message is not None:
+                    note_text = annotation.selected_text or message.content
+
+        if (
+            job_kind == "knowledge_extraction"
+            and payload.get("operation") != "saved_note_summary"
+        ):
             concepts = session.scalars(
                 select(ConceptModel).where(
                     ConceptModel.owner_user_id == owner_user_id,
@@ -193,7 +214,46 @@ def process_next_background_job(
 
     # External model / computation outside any DB transaction!
     try:
-        if job_kind == "knowledge_extraction":
+        if payload.get("operation") == "saved_note_summary":
+            summary, summary_provider, summary_model = (
+                summarize_saved_note(
+                    provider=extraction_provider,
+                    model=extraction_model,
+                    content=note_text,
+                    local_endpoint_url=local_endpoint_url,
+                )
+                if note_text
+                else (None, None, None)
+            )
+            with session_scope(database_url) as session:
+                job = session.get(BackgroundJobModel, claimed_job_id)
+                evidence_id = payload.get("evidence_id")
+                evidence = session.get(EvidenceModel, evidence_id) if evidence_id else None
+                annotation = (
+                    session.get(AnnotationModel, evidence.annotation_id)
+                    if evidence is not None and evidence.annotation_id
+                    else None
+                )
+                fin = utc_now_iso()
+                if (
+                    evidence is not None
+                    and annotation is not None
+                    and annotation.removed_at is None
+                    and summary
+                ):
+                    evidence.summary = summary
+                    evidence.summary_provider = summary_provider
+                    evidence.summary_model = summary_model
+                    evidence.summary_prompt_version = PROMPT_VERSION_SAVED_NOTE_SUMMARY
+                    evidence.summary_generated_at = fin
+                if job is not None:
+                    job.status = "succeeded"
+                    job.lease_owner = None
+                    job.lease_expires_at = None
+                    job.updated_at = fin
+                    job.finished_at = fin
+
+        elif job_kind == "knowledge_extraction":
             if user_msg_dict is None:
                 raise ProviderError(
                     code="missing_source_message",

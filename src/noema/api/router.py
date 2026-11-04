@@ -271,15 +271,18 @@ def post_retry_turn_extraction(
 def post_message_annotation(
     message_id: str,
     req: AnnotationCreateRequest,
+    background_tasks: BackgroundTasks,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     session: Session = Depends(get_db_session),
 ) -> AnnotationDTO:
-    return add_annotation(
+    annotation = add_annotation(
         session,
         message_id=message_id,
         req=req,
         idempotency_key=idempotency_key,
     )
+    background_tasks.add_task(drain_background_jobs)
+    return annotation
 
 
 @router.get(
@@ -311,6 +314,7 @@ def get_knowledge_graph(
     layers: str | None = Query(default=None),
     predicates: str | None = Query(default=None),
     as_of: str | None = Query(default=None),
+    include_unsaved: bool = Query(default=False),
     session: Session = Depends(get_db_session),
 ) -> GraphProjectionResponse:
     layer_set = (
@@ -332,6 +336,7 @@ def get_knowledge_graph(
         layers=layer_set,
         predicates=predicate_set,
         as_of=as_of,
+        include_unsaved=include_unsaved,
     )
 
 

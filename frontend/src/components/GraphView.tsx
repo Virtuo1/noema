@@ -100,6 +100,8 @@ interface GraphViewProps {
   graph: GraphProjectionResponse | undefined;
   isLoading: boolean;
   selectedConceptId: string | null;
+  showAllCategorizedTopics: boolean;
+  onShowAllCategorizedTopicsChange: (showAll: boolean) => void;
   onSelectConcept: (conceptId: string) => void;
   onOpenConversation?: (conversationId: string) => void;
 }
@@ -108,6 +110,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
   graph,
   isLoading,
   selectedConceptId,
+  showAllCategorizedTopics,
+  onShowAllCategorizedTopicsChange,
   onSelectConcept,
   onOpenConversation,
 }) => {
@@ -157,7 +161,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       .sort()
       .join("|");
     const eKey = edges
-      .map((e) => `${e.id}:${e.source}->${e.target}`)
+      .map((e) => `${e.id}:${e.source}->${e.target}:${e.layer}`)
       .sort()
       .join("|");
     return `${activeCategoryFilter ?? "ALL"}::${nKey}::${eKey}`;
@@ -210,8 +214,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const clusterRadius = numCats === 1 ? 0 : Math.max(220, numCats * 95);
 
       const positions: Record<string, { x: number; y: number }> = {};
-      const hubById = new Map<string, string>();
-
       catKeys.forEach((cat, catIdx) => {
         const group = (byCategory.get(cat) ?? []).slice().sort((a, b) => {
           const lvlDiff = (a.hierarchy_level ?? 2) - (b.hierarchy_level ?? 2);
@@ -229,7 +231,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
         const subNodes = group.slice(1);
         subNodes.forEach((sub, idx) => {
-          hubById.set(sub.id, hubNode.id);
           const lvl = sub.hierarchy_level ?? 2;
           const ringRadius =
             lvl === 1
@@ -249,32 +250,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const explicitEdges = edges.filter(
         (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target),
       );
-      const connectedPairs = new Set<string>();
-      for (const e of explicitEdges) {
-        connectedPairs.add(`${e.source}::${e.target}`);
-        connectedPairs.add(`${e.target}::${e.source}`);
-      }
-
-      const syntheticClusterEdges: cytoscape.ElementDefinition[] = [];
-      for (const [subId, hubId] of hubById.entries()) {
-        const hasAnyConnectionInCluster = explicitEdges.some(
-          (e) => e.source === subId || e.target === subId,
-        );
-        if (
-          !hasAnyConnectionInCluster &&
-          !connectedPairs.has(`${subId}::${hubId}`)
-        ) {
-          syntheticClusterEdges.push({
-            data: {
-              id: `cluster-${hubId}-${subId}`,
-              source: hubId,
-              target: subId,
-              isHierarchy: true,
-              isImplicitCluster: true,
-            },
-          });
-        }
-      }
 
       const elements: cytoscape.ElementDefinition[] = [
         ...visibleNodes.map((node) => {
@@ -300,11 +275,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
             id: edge.id,
             source: edge.source,
             target: edge.target,
+            layer: edge.layer,
             isHierarchy: edge.is_hierarchy,
             isImplicitCluster: false,
           },
         })),
-        ...syntheticClusterEdges,
       ];
 
       const prevViewport = savedViewportRef.current;
@@ -412,12 +387,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
             },
           },
           {
-            selector: "edge[?isImplicitCluster]",
+            selector: "edge[layer = 'user_established']",
             style: {
-              width: 0.8,
+              "line-style": "solid",
+              "line-color": "#34d399",
+              opacity: 0.52,
+            },
+          },
+          {
+            selector: "edge[layer = 'suggested']",
+            style: {
+              "line-style": "dashed",
+              "line-color": "#fbbf24",
+              opacity: 0.5,
+            },
+          },
+          {
+            selector: "edge[layer = 'world']",
+            style: {
               "line-style": "dotted",
-              "line-color": "#3f3f46",
-              opacity: 0.2,
+              "line-color": "#38bdf8",
+              opacity: 0.48,
             },
           },
           {
@@ -621,92 +611,115 @@ export const GraphView: React.FC<GraphViewProps> = ({
               Your knowledge graph is ready
             </h2>
             <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
-              Ask a question in the box below to begin. As you chat and tag
-              moments with{" "}
+              Save a moment from chat with a tag such as{" "}
               <span className="text-emerald-300 font-mono">#aha</span> or{" "}
-              <span className="text-violet-300 font-mono">#important</span>,
-              Noema automatically organizes and groups your topics here.
+              <span className="text-violet-300 font-mono">#important</span> to
+              add its topics here.
             </p>
           </div>
         </div>
       )}
 
       {/* Top-Right Compact Vertical Topic Legend & Semantic Zoom Controls */}
-      {nodes.length > 0 && (
-        <div className="fixed top-5 right-5 z-10 flex flex-col items-end gap-1.5">
-          <div className="w-40 flex flex-col items-stretch gap-0.5 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] p-1.5 shadow-xl max-h-64 overflow-y-auto">
-            <button
-              type="button"
-              disabled={Boolean(selectedConceptId)}
-              onClick={() => setActiveCategoryFilter(null)}
-              className={`text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
-                activeCategoryFilter === null
-                  ? "bg-white text-black font-medium"
-                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-            >
-              All topics
-            </button>
-            {categories.map((cat) => {
-              const color = categoryColorMap[cat];
-              const isSelected = activeCategoryFilter === cat;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  disabled={Boolean(selectedConceptId)}
-                  onClick={() =>
-                    setActiveCategoryFilter(isSelected ? null : cat)
-                  }
-                  className={`flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
-                    isSelected
-                      ? "bg-white/15 text-white font-medium border border-white/20"
-                      : "text-zinc-300 hover:bg-white/[0.06]"
-                  }`}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="truncate">{cat}</span>
-                </button>
-              );
-            })}
-          </div>
+      <div className="fixed top-5 right-5 z-10 flex flex-col items-end gap-1.5">
+        <button
+          type="button"
+          aria-pressed={showAllCategorizedTopics}
+          disabled={Boolean(selectedConceptId)}
+          onClick={() => {
+            clearHoverTimer();
+            setHoveredPopup(null);
+            setActiveCategoryFilter(null);
+            onShowAllCategorizedTopicsChange(!showAllCategorizedTopics);
+          }}
+          title="Toggle the categorizer's full topic and connection view for debugging"
+          className={`pointer-events-auto rounded-xl backdrop-blur-2xl border px-3 py-2 text-[10px] shadow-xl transition-colors disabled:opacity-50 ${
+            showAllCategorizedTopics
+              ? "bg-amber-950/90 border-amber-700/70 text-amber-200"
+              : "bg-zinc-950/75 border-white/[0.08] text-zinc-400 hover:text-white"
+          }`}
+        >
+          {showAllCategorizedTopics
+            ? "Debug: all categorized topics"
+            : "Show all categorized topics"}
+        </button>
 
-          <div className="flex items-center gap-1 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-2 py-1 text-[10px] text-zinc-400 shadow-xl">
-            <span>{semanticZoomDescription}</span>
-            <span className="text-zinc-700">·</span>
-            <button
-              type="button"
-              disabled={Boolean(selectedConceptId)}
-              onClick={() => handleZoomBy(0.8)}
-              title="Zoom out to broader topics"
-              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(selectedConceptId)}
-              onClick={handleResetZoom}
-              title="Reset view"
-              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
-            >
-              Fit
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(selectedConceptId)}
-              onClick={() => handleZoomBy(1.25)}
-              title="Zoom in for sub-topic details"
-              className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      )}
+        {nodes.length > 0 && (
+          <>
+            <div className="w-40 flex flex-col items-stretch gap-0.5 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] p-1.5 shadow-xl max-h-64 overflow-y-auto">
+              <button
+                type="button"
+                disabled={Boolean(selectedConceptId)}
+                onClick={() => setActiveCategoryFilter(null)}
+                className={`text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
+                  activeCategoryFilter === null
+                    ? "bg-white text-black font-medium"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                All topics
+              </button>
+              {categories.map((cat) => {
+                const color = categoryColorMap[cat];
+                const isSelected = activeCategoryFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    disabled={Boolean(selectedConceptId)}
+                    onClick={() =>
+                      setActiveCategoryFilter(isSelected ? null : cat)
+                    }
+                    className={`flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors ${
+                      isSelected
+                        ? "bg-white/15 text-white font-medium border border-white/20"
+                        : "text-zinc-300 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="truncate">{cat}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1 rounded-xl bg-zinc-950/75 backdrop-blur-2xl border border-white/[0.06] px-2 py-1 text-[10px] text-zinc-400 shadow-xl">
+              <span>{semanticZoomDescription}</span>
+              <span className="text-zinc-700">·</span>
+              <button
+                type="button"
+                disabled={Boolean(selectedConceptId)}
+                onClick={() => handleZoomBy(0.8)}
+                title="Zoom out to broader topics"
+                className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(selectedConceptId)}
+                onClick={handleResetZoom}
+                title="Reset view"
+                className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
+              >
+                Fit
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(selectedConceptId)}
+                onClick={() => handleZoomBy(1.25)}
+                title="Zoom in for sub-topic details"
+                className="px-1.5 py-0.5 rounded hover:bg-white/[0.08] text-zinc-300"
+              >
+                +
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Interactive Sticky Hover Card (stays open when moving mouse onto it) */}
       {hoveredPopup && (
@@ -735,8 +748,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
               {hoveredPopup.node.category || "General"}
             </span>
             <span className="text-[10px] text-zinc-500">
-              {hoveredPopup.node.mention_count} mention
-              {hoveredPopup.node.mention_count === 1 ? "" : "s"}
+              {hoveredPopup.node.mention_count}{" "}
+              {showAllCategorizedTopics
+                ? `mention${hoveredPopup.node.mention_count === 1 ? "" : "s"}`
+                : `saved note${hoveredPopup.node.mention_count === 1 ? "" : "s"}`}
             </span>
           </div>
 

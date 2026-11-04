@@ -273,6 +273,11 @@ class EvidenceItemDTO(BaseModel):
     annotation_id: str | None = None
     annotation_tag: str | None = None
     quote: str
+    summary: str | None = None
+    summary_provider: str | None = None
+    summary_model: str | None = None
+    summary_prompt_version: str | None = None
+    summary_generated_at: str | None = None
     start_offset: int | None = None
     end_offset: int | None = None
     source_role: str
@@ -364,6 +369,7 @@ class MergeConceptRequest(BaseModel):
 class ConceptEvidenceResponse(BaseModel):
     concept_id: str
     mentions: list[EvidenceItemDTO]
+    saved_notes: list[EvidenceItemDTO] = Field(default_factory=list)
     annotations: list[AnnotationDTO]
     state_signals: list[InferredAnnotationSignalDTO]
     world_claims: list[WorldClaimDTO]

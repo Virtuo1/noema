@@ -49,7 +49,7 @@ The default screen is a chat workspace. The user asks, questions, explains, and 
 
 ### Background organization
 
-After a user message and assistant turn are safely stored, an asynchronous task may extract concepts, mentions, explicit annotations, candidate relations, and knowledge signals. Extraction does not block the next turn. A lightweight indicator can show that prior material is being incorporated; a user should not have to wait for the graph to finish updating before continuing. Ordinary inferred signals should not create a stream of approval prompts. The system can retain low-authority observations in the background and expose them as such when relevant; only an explicit user claim/action or an accepted suggestion can establish the corresponding personal knowledge state.
+After a user message and assistant turn are safely stored, an asynchronous task may extract concepts, mentions, explicit annotations, candidate relations, and knowledge signals. When the user explicitly saves a message or passage with a tag, the organizer also creates a concise summary for the saved-note card. These tasks do not block the next turn. A lightweight indicator can show that prior material is being incorporated; a user should not have to wait for the graph to finish updating before continuing. Ordinary inferred signals should not create a stream of approval prompts. The system can retain low-authority observations in the background and expose them as such when relevant; only an explicit user claim/action or an accepted suggestion can establish the corresponding personal knowledge state.
 
 ### Lightweight annotations
 
@@ -59,7 +59,7 @@ Explicit annotations are preserved as user-authored records. The AI may add an i
 
 ### Graph and history
 
-The graph is a secondary exploration surface, not a separate workflow the user must maintain. It gives an overview, lets a user follow a relationship, and opens evidence or starts a chat grounded in a selected concept. Moving between chat, a concept's evidence, and its graph neighborhood should preserve the current conversation and return path. A concept mentioned in chat can be opened in the graph; a concept selected in the graph can open a new or existing chat with focused context. Suggestions are visually distinct from accepted connections, but are surfaced quietly and contextually rather than as a required review queue. The timeline supports review of changes rather than presenting understanding as a one-way score.
+The graph is a secondary exploration surface, not a separate workflow the user must maintain. Its normal view contains only topics the user explicitly saved with a tag. A categorized relationship appears there only when both endpoint topics are saved; the relationship keeps its source and status, so an AI suggestion is never presented as a user-established connection. A separate debug toggle can reveal all categorized topics and links. Topic cards show concise summaries of saved notes and link back to the original conversation. Moving between chat, a concept's evidence, and its graph neighborhood should preserve the current conversation and return path. A concept selected in the graph can open a new or existing chat with focused context. Suggestions are surfaced quietly and contextually rather than as a required review queue. The timeline supports review of changes rather than presenting understanding as a one-way score.
 
 ## 6. Core workflows
 

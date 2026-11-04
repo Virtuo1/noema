@@ -10,7 +10,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from noema.ai.gateway import (
-     ExtractionProposal,
+    PROMPT_VERSION_SAVED_NOTE_SUMMARY,
+    ExtractionProposal,
     _find_catalog_mentions_in_message,
 )
 from noema.api.schemas import (
@@ -65,6 +66,7 @@ from noema.domain.vocabulary import (
 from noema.persistence.db import new_id, utc_now_iso
 from noema.persistence.models import (
     AnnotationModel,
+    BackgroundJobModel,
     ConceptAliasModel,
     ConceptMentionModel,
     ConceptModel,
@@ -522,6 +524,44 @@ def add_annotation(
     affected_ids, ambiguous = apply_annotation_to_concept_states(
         session, ann, message, owner_user_id=owner_user_id
     )
+
+    saved_evidence = session.scalar(
+        select(EvidenceModel).where(EvidenceModel.annotation_id == ann.id)
+    )
+    if saved_evidence is not None:
+        summary_key = (
+            f"saved-note-summary:{saved_evidence.id}:{PROMPT_VERSION_SAVED_NOTE_SUMMARY}"
+        )
+        existing_job = session.scalar(
+            select(BackgroundJobModel).where(
+                BackgroundJobModel.idempotency_key == summary_key
+            )
+        )
+        if existing_job is None:
+            session.add(
+                BackgroundJobModel(
+                    id=new_id("job"),
+                    owner_user_id=owner_user_id,
+                    job_kind="knowledge_extraction",
+                    source_generation_run_id=None,
+                    payload_json=json.dumps(
+                        {
+                            "operation": "saved_note_summary",
+                            "evidence_id": saved_evidence.id,
+                        }
+                    ),
+                    status="queued",
+                    idempotency_key=summary_key,
+                    attempt_count=0,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    available_at=now,
+                    error_code=None,
+                    created_at=now,
+                    updated_at=now,
+                    finished_at=None,
+                )
+            )
 
     _record_event(
         session,
@@ -1149,6 +1189,11 @@ def _evidence_to_dto(session: Session, ev: EvidenceModel) -> EvidenceItemDTO:
         annotation_id=ev.annotation_id,
         annotation_tag=ann.tag if ann else None,
         quote=ev.quote,
+        summary=ev.summary,
+        summary_provider=ev.summary_provider,
+        summary_model=ev.summary_model,
+        summary_prompt_version=ev.summary_prompt_version,
+        summary_generated_at=ev.summary_generated_at,
         start_offset=ev.start_offset,
         end_offset=ev.end_offset,
         source_role=ev.source_role,
@@ -1752,12 +1797,10 @@ def get_concept_evidence(
         .order_by(ConceptMentionModel.created_at.desc())
     ).all()
     mention_evidence: list[EvidenceItemDTO] = []
-    seen_msg_ids: set[str] = set()
     for m in mentions_rows:
         msg = session.get(MessageModel, m.message_id)
         if msg is None:
             continue
-        seen_msg_ids.add(msg.id)
         ext = (
             session.get(ExtractionRunModel, m.extraction_run_id)
             if m.extraction_run_id
@@ -1790,11 +1833,20 @@ def get_concept_evidence(
     annotations: list[AnnotationDTO] = []
     seen_ann_ids: set[str] = set()
     state_signals: list[InferredAnnotationSignalDTO] = []
+    saved_notes_by_id: dict[str, EvidenceItemDTO] = {}
 
     for se in se_rows:
         ev = session.get(EvidenceModel, se.evidence_id)
         if ev is None:
             continue
+        if (
+            se.origin == SignalOrigin.EXPLICIT_ANNOTATION.value
+            and se.review_status == ReviewStatus.CONFIRMED.value
+            and ev.annotation_id is not None
+        ):
+            ann = session.get(AnnotationModel, ev.annotation_id)
+            if ann is not None and ann.removed_at is None:
+                saved_notes_by_id[ev.id] = _evidence_to_dto(session, ev)
         if ev.annotation_id and ev.annotation_id not in seen_ann_ids:
             ann = session.get(AnnotationModel, ev.annotation_id)
             if ann and ann.removed_at is None:
@@ -1813,19 +1865,6 @@ def get_concept_evidence(
                 rationale=se.rationale,
             )
         )
-
-    # Also include annotations on any message that mentions this concept
-    if seen_msg_ids:
-        msg_anns = session.scalars(
-            select(AnnotationModel).where(
-                AnnotationModel.message_id.in_(seen_msg_ids),
-                AnnotationModel.removed_at.is_(None),
-            )
-        ).all()
-        for ann in msg_anns:
-            if ann.id not in seen_ann_ids:
-                seen_ann_ids.add(ann.id)
-                annotations.append(_to_annotation_dto(session, ann))
 
     wc_rows = session.scalars(
         select(WorldClaimModel).where(
@@ -1895,6 +1934,11 @@ def get_concept_evidence(
     return ConceptEvidenceResponse(
         concept_id=concept.id,
         mentions=mention_evidence,
+        saved_notes=sorted(
+            saved_notes_by_id.values(),
+            key=lambda item: item.captured_at,
+            reverse=True,
+        ),
         annotations=annotations,
         state_signals=state_signals,
         world_claims=wc_dtos,
@@ -2527,6 +2571,7 @@ def project_knowledge_graph(
     layers: set[str] | None = None,
     predicates: set[str] | None = None,
     as_of: str | None = None,
+    include_unsaved: bool = False,
     owner_user_id: str = DEFAULT_OWNER_USER_ID,
 ) -> GraphProjectionResponse:
     """Return a bounded, filterable graph projection with optional historical `as_of` replay."""
@@ -2549,7 +2594,33 @@ def project_knowledge_graph(
         ConceptModel.merged_into_concept_id.is_(None),
         ConceptModel.created_at <= effective_time,
     )
-    all_concepts = {c.id: c for c in session.scalars(concept_stmt).all()}
+    concept_rows = session.scalars(concept_stmt).all()
+    if include_unsaved:
+        all_concepts = {c.id: c for c in concept_rows}
+    else:
+        saved_concept_ids = set(
+            session.scalars(
+                select(UserStateEvidenceModel.concept_id)
+                .join(
+                    EvidenceModel,
+                    EvidenceModel.id == UserStateEvidenceModel.evidence_id,
+                )
+                .join(AnnotationModel, AnnotationModel.id == EvidenceModel.annotation_id)
+                .where(
+                    UserStateEvidenceModel.owner_user_id == owner_user_id,
+                    UserStateEvidenceModel.origin == SignalOrigin.EXPLICIT_ANNOTATION.value,
+                    UserStateEvidenceModel.review_status == ReviewStatus.CONFIRMED.value,
+                    AnnotationModel.owner_user_id == owner_user_id,
+                    AnnotationModel.created_at <= effective_time,
+                    or_(
+                        AnnotationModel.removed_at.is_(None),
+                        AnnotationModel.removed_at > effective_time,
+                    ),
+                )
+                .distinct()
+            ).all()
+        )
+        all_concepts = {c.id: c for c in concept_rows if c.id in saved_concept_ids}
 
     if focus_concept_id and focus_concept_id not in all_concepts:
         # Check if focus concept was merged
@@ -2795,6 +2866,34 @@ def project_knowledge_graph(
                     raw_categories[cid] = raw_categories[nb]
                     break
 
+    saved_notes_by_concept: dict[str, list[tuple[EvidenceModel, AnnotationModel]]] = {}
+    if not include_unsaved and kept_concept_ids:
+        saved_note_rows = session.execute(
+            select(EvidenceModel, AnnotationModel, UserStateEvidenceModel.concept_id)
+            .join(
+                UserStateEvidenceModel,
+                UserStateEvidenceModel.evidence_id == EvidenceModel.id,
+            )
+            .join(AnnotationModel, AnnotationModel.id == EvidenceModel.annotation_id)
+            .where(
+                UserStateEvidenceModel.owner_user_id == owner_user_id,
+                UserStateEvidenceModel.concept_id.in_(kept_concept_ids),
+                UserStateEvidenceModel.origin == SignalOrigin.EXPLICIT_ANNOTATION.value,
+                UserStateEvidenceModel.review_status == ReviewStatus.CONFIRMED.value,
+                AnnotationModel.owner_user_id == owner_user_id,
+                AnnotationModel.created_at <= effective_time,
+                or_(
+                    AnnotationModel.removed_at.is_(None),
+                    AnnotationModel.removed_at > effective_time,
+                ),
+            )
+            .order_by(AnnotationModel.created_at.desc())
+        ).all()
+        for evidence, annotation, concept_key in saved_note_rows:
+            saved_notes_by_concept.setdefault(concept_key, []).append(
+                (evidence, annotation)
+            )
+
     nodes: list[GraphNodeDTO] = []
     for cid in kept_concept_ids:
         c = all_concepts[cid]
@@ -2822,18 +2921,17 @@ def project_knowledge_graph(
         top_quote = ""
         source_conv_id: str | None = None
         source_conv_title = ""
-        msg_ids = [m.message_id for m in mentions]
-        if msg_ids:
-            latest_msg = session.get(MessageModel, msg_ids[0])
-            if latest_msg is not None:
-                top_quote = latest_msg.content[:180]
-                source_conv_id = latest_msg.conversation_id
-                conv_row = session.get(ConversationModel, latest_msg.conversation_id)
-                if conv_row is not None:
-                    source_conv_title = conv_row.title
-
         tags: list[str] = []
-        if msg_ids:
+        if include_unsaved:
+            msg_ids = [m.message_id for m in mentions]
+            if msg_ids:
+                latest_msg = session.get(MessageModel, msg_ids[0])
+                if latest_msg is not None:
+                    top_quote = latest_msg.content[:180]
+                    source_conv_id = latest_msg.conversation_id
+                    conv_row = session.get(ConversationModel, latest_msg.conversation_id)
+                    if conv_row is not None:
+                        source_conv_title = conv_row.title
             ann_rows = session.scalars(
                 select(AnnotationModel).where(
                     AnnotationModel.message_id.in_(msg_ids),
@@ -2843,18 +2941,34 @@ def project_knowledge_graph(
             for a in ann_rows:
                 if a.tag not in tags:
                     tags.append(a.tag)
+            displayed_note_count = len(mentions)
+        else:
+            saved_note_rows = saved_notes_by_concept.get(c.id, [])
+            displayed_note_count = len(saved_note_rows)
+            for _, annotation in saved_note_rows:
+                if annotation.tag not in tags:
+                    tags.append(annotation.tag)
+            if saved_note_rows:
+                latest_evidence, _ = saved_note_rows[0]
+                top_quote = (latest_evidence.summary or latest_evidence.quote)[:180]
+                latest_msg = session.get(MessageModel, latest_evidence.message_id)
+                if latest_msg is not None:
+                    source_conv_id = latest_msg.conversation_id
+                    conv_row = session.get(ConversationModel, latest_msg.conversation_id)
+                    if conv_row is not None:
+                        source_conv_title = conv_row.title
 
         deg = degree_by_id.get(cid, 0)
         importance = round(
             1.0
-            + len(mentions) * 0.65
+            + displayed_note_count * 0.65
             + deg * 0.85
             + (1.4 if tags else 0.0),
             2,
         )
-        if cid in hierarchy_targets or deg >= 3 or len(mentions) >= 3:
+        if cid in hierarchy_targets or deg >= 3 or displayed_note_count >= 3:
             h_level = 1
-        elif deg >= 1 or len(mentions) >= 2 or tags:
+        elif deg >= 1 or displayed_note_count >= 2 or tags:
             h_level = 2
         else:
             h_level = 3
@@ -2877,7 +2991,7 @@ def project_knowledge_graph(
                 source_conversation_id=source_conv_id,
                 source_conversation_title=source_conv_title,
                 signals=signals,
-                mention_count=len(mentions),
+                mention_count=displayed_note_count,
                 open_question_count=0,
             )
         )
