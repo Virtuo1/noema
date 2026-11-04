@@ -4,7 +4,7 @@
 
 **Working description:** a personal knowledge environment in which a person explores ideas through conversation while the application quietly builds a navigable, evidence-backed model of concepts they have encountered, explored, questioned, connected, or demonstrated understanding of.
 
-The product joins two activities that are usually separated: open-ended conversation and the gradual accumulation of personal knowledge. Chat remains the primary work surface. The structured model is a useful byproduct and a way back into prior thinking, not a filing task the user must perform after every conversation.
+The product joins two activities that are usually separated: open-ended conversation and the gradual accumulation of personal knowledge. The experience should feel like a better, continuous version of a familiar LLM chat window. Chat remains the primary work surface; the structured model is a useful byproduct and a way back into prior thinking, not a filing task the user must perform after every conversation. The graph is an optional plus to the conversation experience, never the price of entry.
 
 ## 2. Problem and opportunity
 
@@ -22,6 +22,8 @@ The initial product should demonstrate these outcomes:
 4. The user can explicitly mark a particular message or passage as understood, confusing, important, or worth revisiting.
 5. The user can see the personal knowledge graph, distinguish their connections from suggestions, and open the supporting conversation.
 6. The user can review a timeline showing when the model changed and what evidence caused the change.
+
+The user should be able to get value from ordinary chat without opening the graph, tagging every message, reviewing every extraction, or maintaining categories. The system should carry useful continuity into chat in the background and offer richer graph/history views when the user wants them.
 
 Success is not measured by number of nodes, edges, or annotations. The core test is whether the user can recover a relevant prior idea with less effort and whether the system avoids overstating what they understand.
 
@@ -43,21 +45,21 @@ One individual curious across multiple domains who uses conversation to learn, r
 
 ### Exploration first
 
-The default screen is a chat workspace. The user asks, questions, explains, and reflects. The assistant may draw on prior context, but should keep answers focused and make it possible to inspect the sources behind personalized references.
+The default screen is a chat workspace. The user asks, questions, explains, and reflects. They should not have to choose a mode, concept, folder, or destination before sending a message. The assistant may draw on prior context, but should keep answers focused and make it possible to inspect the sources behind personalized references.
 
 ### Background organization
 
-After a user message and assistant turn are safely stored, an asynchronous task may extract concepts, mentions, explicit annotations, candidate relations, and knowledge signals. Extraction does not block the next turn. A lightweight indicator can show that prior material is being incorporated; a user should not have to wait for the graph to finish updating before continuing.
+After a user message and assistant turn are safely stored, an asynchronous task may extract concepts, mentions, explicit annotations, candidate relations, and knowledge signals. Extraction does not block the next turn. A lightweight indicator can show that prior material is being incorporated; a user should not have to wait for the graph to finish updating before continuing. Ordinary inferred signals should not create a stream of approval prompts. The system can retain low-authority observations in the background and expose them as such when relevant; only an explicit user claim/action or an accepted suggestion can establish the corresponding personal knowledge state.
 
 ### Lightweight annotations
 
-The user can attach one or more annotations to a message or selected passage. The initial UI should offer buttons/menu actions for `aha`, `confused`, `question`, `connection`, `hypothesis`, `revisit`, and `important`. Typing tags such as `#aha` can be a convenient shortcut, but must resolve to the same structured annotation and must not cause arbitrary hashtag text to be treated as a command without an explicit parsing rule. An annotation applies to the selected evidence span, or to the whole message when no span is selected.
+The user can attach one or more annotations to a message or selected passage. The initial UI should offer buttons/menu actions for `aha`, `confused`, `question`, `connection`, `hypothesis`, `revisit`, and `important`, and support those same tags as direct `#commands`. A recognized command is an explicit user action: apply it immediately, show a small annotation chip with undo, and do not put a confirmation dialog in the way. Keep the original message as evidence. Only recognized standalone tags are commands; other hashtag text remains literal. An annotation applies to the selected evidence span, or to the whole targeted message when no span is selected. The exact targeting rule for a standalone follow-up command should be consistent and visible.
 
 Explicit annotations are preserved as user-authored records. The AI may add an inferred signal with lower authority and clear provenance, but may not rewrite an explicit annotation.
 
 ### Graph and history
 
-The graph is a secondary exploration surface. It gives an overview, lets a user follow a relationship, and opens evidence or starts a chat grounded in a selected concept. Suggestions are visually and behaviorally distinct from accepted connections. The timeline supports review of changes rather than presenting understanding as a one-way score.
+The graph is a secondary exploration surface, not a separate workflow the user must maintain. It gives an overview, lets a user follow a relationship, and opens evidence or starts a chat grounded in a selected concept. Moving between chat, a concept's evidence, and its graph neighborhood should preserve the current conversation and return path. A concept mentioned in chat can be opened in the graph; a concept selected in the graph can open a new or existing chat with focused context. Suggestions are visually distinct from accepted connections, but are surfaced quietly and contextually rather than as a required review queue. The timeline supports review of changes rather than presenting understanding as a one-way score.
 
 ## 6. Core workflows
 
@@ -72,14 +74,15 @@ The graph is a secondary exploration surface. It gives an overview, lets a user 
 
 1. User marks a message or passage `aha`.
 2. The annotation is immediately saved as explicit user evidence and appears in the timeline.
-3. The concept's current projection records an explicit self-report signal, not a proven mastery claim.
-4. The graph may change visual status to “self-reported understanding”; it does not silently label the concept “understood.”
+3. When background concept matching resolves the marked passage, that original passage becomes inspectable evidence on the corresponding concept node; the content is linked, not copied into a second note.
+4. The concept's current projection records an explicit self-report signal, not a proven mastery claim.
+5. The graph may change visual status to “self-reported understanding”; it does not silently label the concept “understood.”
 
 ### C. Review an AI-extracted concept or connection
 
 1. The extractor identifies a concept mention and possible relation, linking each to the source message and extraction run.
 2. A relation inferred from the conversation is either recorded as a candidate user connection or placed in a suggestion, depending on whether the user actually asserted it. The extraction model cannot accept its own suggestion on the user's behalf.
-3. User opens the suggestion, sees why it was proposed and which evidence was used, and accepts, rejects, or leaves it pending.
+3. The suggestion may appear as a small contextual card in chat or as an optional graph overlay. The user can inspect why it was proposed and which evidence was used, then accept, reject, dismiss, or ignore it.
 4. Acceptance creates a user-established relation and a knowledge event; rejection is also retained as history. Neither action rewrites the source message.
 
 ### D. Inspect a concept and its development
@@ -105,7 +108,7 @@ The graph is a secondary exploration surface. It gives an overview, lets a user 
 - **FR-5 Provenance:** every extracted entity or claim must trace to source evidence and, for AI-created records, the extraction run and model/prompt version.
 - **FR-6 Annotations:** create, list, and remove explicit user annotations on messages or passages; support multiple annotations.
 - **FR-7 Knowledge state:** distinguish encounter, exploration, self-report, demonstrated evidence, and uncertainty. Repeated discussion alone must not imply understanding.
-- **FR-8 Suggestions:** list, inspect, accept, and reject proposed connections. Acceptance is a user action that creates a user-established relation.
+- **FR-8 Suggestions:** retain and optionally surface proposed connections in relevant chat/graph context. The user can inspect, accept, reject, dismiss, or ignore a suggestion. Acceptance is a user action that creates a user-established relation; no inbox must be cleared.
 - **FR-9 Graph projection:** return a bounded, filterable graph with hierarchy and arbitrary relations, source links, status, and temporal filters.
 - **FR-10 History:** record and retrieve knowledge events with timestamps and evidence references; support a historical “as of” graph query for the prototype's event types.
 - **FR-11 Export/delete:** export all user-owned content and derived records in a documented open format; delete conversations and data with derived-index cleanup.
@@ -123,7 +126,9 @@ The graph is a secondary exploration surface. It gives an overview, lets a user 
 ## 8. Non-functional requirements
 
 - **Low friction:** the common chat turn requires no mandatory tagging or filing.
+- **Chat-first continuity:** graph, history, and evidence views extend the current conversation and preserve a simple route back to it; no daily workflow depends on visiting them.
 - **Responsiveness:** conversational response time must not wait on extraction or graph layout. Retrieval should have an explicit latency budget established during prototype evaluation.
+- **Low interruption:** extraction and connection discovery must not create routine approval chores. Surface only timely, useful opportunities; let the user ignore them without penalty.
 - **Reliability:** a failed extraction must not lose a conversation turn; jobs must be retryable and idempotent.
 - **Explainability:** any personalized statement about the user's past or understanding should be traceable to evidence and should reveal whether it was explicit, inferred, or demonstrated.
 - **Privacy:** local data remains local by default. Before using a hosted provider, disclose what message/context is sent and provide a configuration path to disable hosted calls.
@@ -161,9 +166,9 @@ Initial performance and availability numbers remain open until there is a repres
 These should be answered through prototype use rather than blocking architecture:
 
 1. **What is the user-facing vocabulary?** “Knowledge,” “understanding,” “confidence,” and “evidence” can feel evaluative. Test neutral labels such as “encountered,” “explored,” “you marked as understood,” and “shown in your explanations.”
-2. **When should the assistant surface a connection?** Inline interruptions may add friction. Start with a quiet suggestion inbox and an opt-in contextual mention; measure usefulness before increasing interruption.
+2. **When should the assistant surface a connection?** Inline interruptions may add friction. Start with an optional, quiet contextual card or graph overlay; do not require the user to clear a suggestion inbox. Measure usefulness before increasing interruption.
 3. **How much graph is useful by default?** A focused neighborhood may be more navigable than a full map. Prototype both overview and concept-centered views.
-4. **Should free-form `#tags` be parsed?** Recommendation: UI annotation actions first; parse known tags only when they appear as standalone tokens in user messages, show confirmation/undo, and preserve literal text.
+4. **What is the exact targeting rule for a typed `#command`?** Recommendation: make known standalone tags explicit commands, apply immediately with undo, preserve the original message, and use a predictable rule for whether a bare follow-up tag targets the prior assistant answer or the user's current message. Test this interaction detail; do not require a confirmation dialog.
 5. **What exactly counts as demonstrated understanding?** For the MVP, store observable evidence such as the user explaining a concept, comparing ideas, or solving a problem. Do not claim mastery; let the user decide whether evidence is meaningful.
 6. **What hosted deployment is desired later?** It changes account, encryption, operational, sync, and database decisions. The local prototype intentionally avoids prematurely settling this.
 7. **What deletion semantics are desired for event history?** User control requires deletion to remove source and derived personal data. An audit event may be retained only if it does not preserve content the user intended to erase; default recommendation is hard deletion of linked personal content and no retained payload.
@@ -176,3 +181,5 @@ These should be answered through prototype use rather than blocking architecture
 - Do explicit annotations feel fast, and do inferred learning signals feel unobtrusive and correctable?
 - Can a user tell a suggestion from a personally established relation at a glance?
 - Does the timeline help the user reflect without implying that knowledge is a simple score?
+- Can the user ignore the graph and still experience useful continuity in chat?
+- Do graph/context transitions preserve the user's place and feel like one environment rather than separate tools?

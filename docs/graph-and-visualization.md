@@ -2,7 +2,7 @@
 
 ## 1. The graph is a view of records, not the knowledge database
 
-The relational model remains authoritative. A graph response is a bounded projection containing node/edge IDs, labels, semantic kind, status, evidence counts, timestamps, and source links. The frontend may compute layout coordinates and transient clusters, but it does not invent or persist semantic facts as graph edges.
+The relational model remains authoritative. A graph response is a bounded projection containing node/edge IDs, labels, semantic kind, status, evidence counts, timestamps, and source links. The frontend may compute layout coordinates and transient clusters, but it does not invent or persist semantic facts as graph edges. A user should be able to ignore the graph and still get continuity from chat; opening a graph neighborhood should feel like looking into the current conversation's context, with an obvious route back.
 
 The projection combines visibly distinct layers:
 

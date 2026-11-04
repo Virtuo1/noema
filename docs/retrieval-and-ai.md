@@ -116,7 +116,7 @@ Run discovery as a bounded background task, not on every token and not as an aut
 4. Ask a model for candidate relation(s), a short explanation, exact supporting source references, and a typed relation predicate.
 5. Validate that both concepts resolve and all evidence IDs are valid.
 6. Persist as `knowledge_suggestions` with status `pending`; do not insert `user_relations`.
-7. Surface in a quiet inbox or when user explores a relevant concept. Rate-limit and deduplicate suggestions.
+7. Surface sparingly as an optional contextual card in chat, a graph overlay, or a concept detail view. Do not create a badge/notification stream or require inbox clearing. Rate-limit and deduplicate suggestions; leaving one alone is a valid user choice.
 
 Discovery should prioritize a specific explanatory payoff (“these two mechanisms differ in what information is local”) over generic semantic proximity (“these concepts are both in computer science”). A proposed link should cite why it is useful, not only that vectors are close.
 

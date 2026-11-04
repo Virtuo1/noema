@@ -19,6 +19,7 @@ This directory is the working product and technical specification for the LLM-na
 - **Data control:** the local database is the source of truth. Hosted model calls are opt-in per provider/model configuration; local inference is supported through the same adapter boundary. The UI must communicate when content is sent to a remote provider.
 - **Database:** SQLite is recommended for this local single-user starting point, with FTS5 for lexical search and exact vector ranking in the application for the first small corpus. This avoids requiring a database server or extension at install time. The schema keeps vector operations behind a repository interface so PostgreSQL plus pgvector remains a credible deployment choice if sync, multiple writers, or measured search scale justifies it.
 - **Graph semantics:** a graph edge is never, by itself, evidence that the user understands the relationship. World-model claims, user-established connections, and AI suggestions are separate records.
+- **Experience:** chat is the product's everyday surface. Graph, evidence, and history views are optional context that should lower cognitive load, not add a review queue or required organization work.
 - **History:** current state is a query-friendly projection; append-only knowledge events preserve how that state changed. This is intentionally not full event sourcing.
 - **AI confidence:** model confidence is a review hint, not a calibrated probability and never a substitute for user evidence.
 

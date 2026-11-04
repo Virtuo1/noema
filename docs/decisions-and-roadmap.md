@@ -154,7 +154,7 @@ Implement only the central loop:
 
 1. Create a conversation and exchange messages in chat.
 2. Persist turns reliably with provider/model metadata.
-3. Add a message annotation such as `#aha` through a clear UI action.
+3. Add a message annotation such as `#aha` through either a typed command or a direct UI action, with immediate feedback and undo.
 4. Queue extraction asynchronously; extract concepts/mentions and typed candidates with evidence links.
 5. Store world claims, user states, pending suggestions, and events separately.
 6. Render a bounded concept graph with hierarchy/relations and an evidence side panel.
@@ -194,7 +194,7 @@ Implement only the central loop:
 - A user can ask a question and continue the same conversation.
 - The chat response does not wait for extraction.
 - Conversation/model failures and extraction failures have separate visible statuses.
-- `#aha` or UI annotation is anchored to a specific message/span and stays user-authored.
+- Typed `#aha` or a UI annotation is anchored to a specific message/span, stays user-authored, and needs no confirmation dialog.
 - Concepts and relations link to source messages and extraction provenance.
 - A suggested Backpropagation–Hebbian connection remains visibly pending until a user action accepts it.
 - Acceptance creates a user relation and event but does not mark Hebbian learning as understood.
