@@ -27,10 +27,14 @@ export const App: React.FC = () => {
     string | null
   >(null);
   const [composerText, setComposerText] = useState<string>("");
-  const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [streamingChunks, setStreamingChunks] = useState<
+    { id: number; text: string; delayMs: number }[]
+  >([]);
   const [streamingUserText, setStreamingUserText] = useState<string | null>(
     null,
   );
+  const chunkCounterRef = useRef<number>(0);
+  const nextRevealTimeRef = useRef<number>(0);
   const [searchFilter, setSearchFilter] = useState<string>("");
 
   // Graph is the default UI mode filling the viewport
@@ -174,13 +178,30 @@ export const App: React.FC = () => {
         setActiveConversationId(convId);
       }
       setStreamingUserText(payload.content);
-      setStreamingContent("");
+      setStreamingChunks([]);
+      chunkCounterRef.current = 0;
+      nextRevealTimeRef.current = performance.now();
+
       await apiClient.sendTurnStream(
         convId,
         payload.content,
         {
           onDelta: (delta) => {
-            setStreamingContent((prev) => (prev ?? "") + delta);
+            const tokens = delta.match(/\S+\s*|\s+/g) ?? [delta];
+            const now = performance.now();
+            let scheduled = Math.max(now, nextRevealTimeRef.current);
+            // Cap max queue lead time so long bursts stay responsive while still fading word-by-word
+            if (scheduled - now > 900) {
+              scheduled = now + 900;
+            }
+            const newItems = tokens.map((tok) => {
+              const id = ++chunkCounterRef.current;
+              const delayMs = Math.max(0, Math.round(scheduled - now));
+              scheduled += 22;
+              return { id, text: tok, delayMs };
+            });
+            nextRevealTimeRef.current = scheduled;
+            setStreamingChunks((prev) => [...prev, ...newItems]);
           },
           onFailed: (turnId) => {
             if (turnId) setLastFailedTurnId(turnId);
@@ -189,10 +210,23 @@ export const App: React.FC = () => {
         "personalized",
         payload.focusConceptId,
       );
+
+      // Let the final staggered word fade-ins finish before swapping in the persisted message
+      const remainingMs = Math.max(
+        0,
+        Math.min(
+          1000,
+          Math.round(nextRevealTimeRef.current - performance.now() + 280),
+        ),
+      );
+      if (remainingMs > 20) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingMs));
+      }
+      await queryClient.refetchQueries({ queryKey: ["messages", convId] });
     },
     onSettled: () => {
       setStreamingUserText(null);
-      setStreamingContent(null);
+      setStreamingChunks([]);
       setComposerText("");
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -217,7 +251,7 @@ export const App: React.FC = () => {
     ) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messagesQuery.data, streamingContent, activeSurface]);
+  }, [messagesQuery.data, streamingChunks, activeSurface]);
 
   const handleSelectConcept = useCallback((conceptId: string) => {
     setSelectedConceptId((prev) => (prev === conceptId ? null : conceptId));
@@ -429,9 +463,17 @@ export const App: React.FC = () => {
                 </article>
                 <article className="flex flex-col items-start animate-fade-in">
                   <div className="w-full py-1 text-[15px] leading-relaxed text-zinc-200">
-                    {streamingContent ? (
-                      <p className="whitespace-pre-wrap animate-fade-in">
-                        {streamingContent}
+                    {streamingChunks.length > 0 ? (
+                      <p className="whitespace-pre-wrap">
+                        {streamingChunks.map((chunk) => (
+                          <span
+                            key={chunk.id}
+                            className="animate-token-fade"
+                            style={{ animationDelay: `${chunk.delayMs}ms` }}
+                          >
+                            {chunk.text}
+                          </span>
+                        ))}
                       </p>
                     ) : (
                       <span className="text-xs text-zinc-500 animate-pulse">

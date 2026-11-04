@@ -16,3 +16,18 @@
 .animate-fade-in {
   animation: noemaFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+@keyframes noemaTokenFade {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+.animate-token-fade {
+  animation: noemaTokenFade 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
