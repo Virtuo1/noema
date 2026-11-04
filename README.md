@@ -25,18 +25,22 @@ See [`docs/README.md`](docs/README.md) for the full specification and architectu
 
 ## Quick Start
 
-### Backend (FastAPI + SQLite)
+### Start Everything with One Command
 
 ```bash
-uv sync
-uv run alembic upgrade head
-uv run uvicorn noema.main:app --host 127.0.0.1 --port 8000 --reload
+uv run noema
 ```
 
-### Frontend (React + TypeScript + Vite)
+This initializes the local SQLite database (`./data/noema.db`), starts the FastAPI backend on `http://127.0.0.1:8000`, and launches the React + Vite UI on **`http://127.0.0.1:5173`** (or serves the built UI directly on `http://127.0.0.1:8000` with `uv run noema --api-only`). Press `Ctrl+C` to stop both cleanly.
+
+### Manual Separate Commands (Optional)
 
 ```bash
-npm --prefix frontend install
+# Backend
+uv run alembic upgrade head
+uv run uvicorn noema.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Frontend
 npm --prefix frontend run dev
 ```
 
@@ -49,3 +53,4 @@ npm --prefix frontend run lint
 npm --prefix frontend run test
 npm --prefix frontend run build
 ```
+

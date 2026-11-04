@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from noema.api.router import router as api_v1_router
 from noema.config import get_settings
@@ -89,7 +91,17 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(api_v1_router)
+
+    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(frontend_dist), html=True),
+            name="frontend",
+        )
+
     return app
 
 
 app = create_app()
+

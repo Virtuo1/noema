@@ -263,3 +263,4 @@ def canonicalize_symmetric_endpoints(
     if meta and meta.is_symmetric and subject_id > object_id:
         return object_id, subject_id
     return subject_id, object_id
+

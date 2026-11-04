@@ -757,3 +757,4 @@ class DocumentEmbeddingModel(Base):
     vector_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
+

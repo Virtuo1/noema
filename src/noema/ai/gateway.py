@@ -749,3 +749,4 @@ def check_provider_connectivity(
             f"No API key configured for {cap.display_name}. Set {cap.env_key_name} or configure local secrets.",
         )
     return True, "Provider configuration valid."
+

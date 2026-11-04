@@ -865,3 +865,4 @@ def format_turn_sse_stream(
                 f"id: {ev_id}\nevent: knowledge.status\ndata: "
                 f"{json.dumps({'turn_id': turn_id, 'extraction_status': status_dto.extraction_status})}\n\n"
             )
+

@@ -134,3 +134,4 @@ RETRIEVAL_EVAL_CASES: list[RetrievalEvalCase] = [
         rationale="Should retrieve the earlier confusion-tagged turn on L2 regularization and Bayesian priors.",
     ),
 ]
+

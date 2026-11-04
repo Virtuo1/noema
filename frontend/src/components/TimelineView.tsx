@@ -108,3 +108,4 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     </section>
   );
 };
+

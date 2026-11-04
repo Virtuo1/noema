@@ -17,6 +17,9 @@ dependencies = [
     "uvicorn>=0.30.0",
 ]
 
+[project.scripts]
+noema = "noema.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",

@@ -47,3 +47,4 @@ def downgrade() -> None:
     if bind.dialect.name == "sqlite":
         bind.execute(text("DROP TABLE IF EXISTS search_documents_fts;"))
     Base.metadata.drop_all(bind=bind)
+
