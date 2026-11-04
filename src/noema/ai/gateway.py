@@ -92,12 +92,15 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         env_key_name="GEMINI_API_KEY",
         recommended_chat_models=(
             "gemini-3-flash-preview",
+            "gemma-4-26b-a4b-it",
+            "gemma-4-31b-it",
             "gemini-3.5-flash-lite",
             "gemini-3.8-flash",
         ),
         recommended_small_models=(
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
+            "gemma-4-26b-a4b-it",
         ),
     ),
     "anthropic": ProviderCapability(
@@ -423,7 +426,7 @@ def _call_external_llm(
                     last_resp = resp
                     if resp.status_code < 400:
                         break
-                    if resp.status_code not in (404, 429, 503):
+                    if resp.status_code not in (404, 429, 500, 503):
                         break
 
                 assert last_resp is not None
@@ -449,6 +452,13 @@ def _call_external_llm(
                         retryable=False,
                     )
                 parts = candidates[0].get("content", {}).get("parts", [])
+                non_thought = [
+                    str(p.get("text", ""))
+                    for p in parts
+                    if not p.get("thought") and p.get("text")
+                ]
+                if non_thought:
+                    return "".join(non_thought)
                 return "".join(str(p.get("text", "")) for p in parts)
 
             if provider in ("local_openai", "openai"):
@@ -770,6 +780,39 @@ def _stream_external_llm(
                 last_error_msg = ""
                 last_status = 500
                 for candidate_model in candidate_models:
+                    if candidate_model.startswith("gemma-"):
+                        gen_resp = client.post(
+                            f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent",
+                            headers={
+                                "Content-Type": "application/json",
+                                "x-goog-api-key": str(api_key),
+                            },
+                            json=gemini_payload,
+                        )
+                        if gen_resp.status_code < 400:
+                            parts = (
+                                gen_resp.json()
+                                .get("candidates", [{}])[0]
+                                .get("content", {})
+                                .get("parts", [])
+                            )
+                            non_thought = [
+                                str(p.get("text", ""))
+                                for p in parts
+                                if not p.get("thought") and p.get("text")
+                            ]
+                            full_txt = (
+                                "".join(non_thought)
+                                if non_thought
+                                else "".join(str(p.get("text", "")) for p in parts)
+                            )
+                            yield from stream_chat_tokens(full_txt, chunk_size=16)
+                            return
+                        last_status = gen_resp.status_code
+                        if gen_resp.status_code in (404, 429, 500, 503):
+                            continue
+                        break
+
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:streamGenerateContent?alt=sse"
                     with client.stream(
                         "POST",
@@ -793,7 +836,7 @@ def _stream_external_llm(
                                 last_error_msg = body_bytes.decode(
                                     "utf-8", errors="ignore"
                                 )[:160]
-                            if resp.status_code in (404, 429, 503):
+                            if resp.status_code in (404, 429, 500, 503):
                                 continue
                             break
 
@@ -813,7 +856,9 @@ def _stream_external_llm(
                                         .get("parts", [])
                                     )
                                     chunk_text = "".join(
-                                        str(p.get("text", "")) for p in parts
+                                        str(p.get("text", ""))
+                                        for p in parts
+                                        if not p.get("thought")
                                     )
                                     if chunk_text:
                                         yield chunk_text
